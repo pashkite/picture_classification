@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "primaryCategories": [
+    {
+      "id": "person",
+      "displayName": "사람",
+      "level1": "사람",
+      "classifierKeywords": ["person", "man", "woman", "boy", "girl", "human", "portrait", "bride", "groom"],
+      "pathKeywords": ["person", "portrait", "family", "friends", "selfie", "인물", "사람"],
+      "textKeywords": ["profile", "avatar"],
+      "prototypeId": "person"
+    },
+    {
+      "id": "selfie",
+      "displayName": "셀카",
+      "level1": "셀카",
+      "classifierKeywords": ["person", "face", "portrait", "smile"],
+      "pathKeywords": ["selfie", "camera", "front", "me", "셀카"],
+      "textKeywords": ["selfie"],
+      "prototypeId": "selfie"
+    },
+    {
+      "id": "landscape",
+      "displayName": "풍경",
+      "level1": "풍경",
+      "classifierKeywords": ["landscape", "mountain", "valley", "seashore", "lakeside", "sky", "forest", "beach", "sunset", "nature"],
+      "pathKeywords": ["travel", "trip", "landscape", "nature", "풍경", "여행"],
+      "prototypeId": "landscape"
+    },
+    {
+      "id": "food",
+      "displayName": "음식",
+      "level1": "음식",
+      "classifierKeywords": ["food", "dish", "plate", "pizza", "burger", "pasta", "cake", "sushi", "meal", "restaurant"],
+      "pathKeywords": ["food", "meal", "cafe", "restaurant", "음식", "맛집"],
+      "prototypeId": "food"
+    },
+    {
+      "id": "pet",
+      "displayName": "반려동물",
+      "level1": "반려동물",
+      "classifierKeywords": ["dog", "cat", "kitten", "puppy", "pet", "mammal", "bird", "animal"],
+      "pathKeywords": ["dog", "cat", "pet", "puppy", "kitten", "반려", "강아지", "고양이"],
+      "prototypeId": "pet"
+    },
+    {
+      "id": "document",
+      "displayName": "문서",
+      "level1": "문서",
+      "classifierKeywords": ["web site", "menu", "book jacket", "envelope", "newspaper"],
+      "pathKeywords": ["document", "docs", "memo", "note", "문서", "메모"],
+      "textKeywords": ["invoice", "memo", "note", "letter", "document"],
+      "prototypeId": "document"
+    },
+    {
+      "id": "receipt",
+      "displayName": "영수증",
+      "level1": "영수증",
+      "classifierKeywords": ["menu", "packet", "envelope"],
+      "pathKeywords": ["receipt", "bill", "invoice", "영수증", "결제"],
+      "textKeywords": ["total", "tax", "won", "krw", "receipt", "vat", "합계", "결제", "승인"],
+      "prototypeId": "receipt"
+    },
+    {
+      "id": "screenshot",
+      "displayName": "스크린샷",
+      "level1": "스크린샷",
+      "classifierKeywords": ["monitor", "web site", "menu", "scoreboard", "screen", "television"],
+      "pathKeywords": ["screenshot", "screenrecord", "screen_shot", "캡처", "스크린샷"],
+      "textKeywords": ["login", "menu", "settings", "notification", "quest", "inventory"],
+      "prototypeId": "screenshot"
+    },
+    {
+      "id": "drawing",
+      "displayName": "그림",
+      "level1": "그림",
+      "classifierKeywords": ["drawing", "sketch", "line drawing", "doodle"],
+      "pathKeywords": ["drawing", "sketch", "그림", "낙서"],
+      "prototypeId": "drawing"
+    },
+    {
+      "id": "illustration",
+      "displayName": "일러스트",
+      "level1": "일러스트",
+      "classifierKeywords": ["illustration", "painting", "art", "poster", "cover", "graphic design"],
+      "pathKeywords": ["illust", "illustration", "pixiv", "fanart", "artwork", "일러스트"],
+      "prototypeId": "illustration"
+    },
+    {
+      "id": "anime",
+      "displayName": "애니 관련",
+      "level1": "애니 관련",
+      "classifierKeywords": ["cartoon", "comic book", "animation", "fictional character", "book jacket"],
+      "pathKeywords": ["anime", "manga", "ani", "애니", "만화"],
+      "prototypeId": "anime"
+    },
+    {
+      "id": "game",
+      "displayName": "게임 관련",
+      "level1": "게임 관련",
+      "classifierKeywords": ["web site", "monitor", "scoreboard", "menu", "controller", "joystick", "screen"],
+      "pathKeywords": ["game", "gaming", "steam", "genshin", "valorant", "minecraft", "게임"],
+      "prototypeId": "game"
+    },
+    {
+      "id": "meme",
+      "displayName": "밈",
+      "level1": "밈",
+      "classifierKeywords": ["comic book", "book jacket", "poster", "web site"],
+      "pathKeywords": ["meme", "shitpost", "짤", "밈"],
+      "textKeywords": ["ㅋㅋ", "lol", "wtf", "bro", "meme"],
+      "prototypeId": "meme"
+    },
+    {
+      "id": "other",
+      "displayName": "기타",
+      "level1": "기타",
+      "classifierKeywords": ["object", "artifact"],
+      "pathKeywords": [],
+      "prototypeId": "other"
+    }
+  ],
+  "secondaryCategories": [
+    {
+      "id": "anime_image",
+      "displayName": "애니 이미지",
+      "level1": "애니 관련",
+      "level2": "애니 이미지",
+      "classifierKeywords": ["cartoon", "comic book", "fictional character"],
+      "pathKeywords": ["anime", "manga", "애니"],
+      "prototypeId": "anime"
+    },
+    {
+      "id": "game_image",
+      "displayName": "게임 이미지",
+      "level1": "게임 관련",
+      "level2": "게임 이미지",
+      "classifierKeywords": ["monitor", "controller", "scoreboard", "menu"],
+      "pathKeywords": ["game", "steam", "게임"],
+      "prototypeId": "game"
+    },
+    {
+      "id": "general_illustration",
+      "displayName": "일반 일러스트",
+      "level1": "일러스트",
+      "level2": "일반 일러스트",
+      "classifierKeywords": ["illustration", "painting", "graphic design"],
+      "pathKeywords": ["illust", "artwork", "일러스트"],
+      "prototypeId": "illustration"
+    },
+    {
+      "id": "webtoon_style",
+      "displayName": "만화풍/웹툰풍",
+      "level1": "그림",
+      "level2": "만화풍/웹툰풍",
+      "classifierKeywords": ["comic book", "book jacket", "cartoon"],
+      "pathKeywords": ["webtoon", "toon", "만화", "웹툰"],
+      "prototypeId": "drawing"
+    },
+    {
+      "id": "fanart_possible",
+      "displayName": "팬아트 가능성",
+      "level1": "일러스트",
+      "level2": "팬아트 가능성",
+      "classifierKeywords": ["fictional character", "cartoon", "illustration"],
+      "pathKeywords": ["fanart", "pixiv", "fan_art"],
+      "prototypeId": "illustration"
+    },
+    {
+      "id": "character_focus",
+      "displayName": "캐릭터 중심",
+      "level1": "애니 관련",
+      "level2": "캐릭터 중심",
+      "classifierKeywords": ["person", "portrait", "fictional character", "face"],
+      "pathKeywords": ["portrait", "character", "캐릭터"],
+      "prototypeId": "person"
+    },
+    {
+      "id": "ui_focus",
+      "displayName": "UI 중심",
+      "level1": "게임 관련",
+      "level2": "UI 중심",
+      "classifierKeywords": ["web site", "menu", "monitor", "scoreboard"],
+      "pathKeywords": ["ui", "menu", "hud", "inventory"],
+      "prototypeId": "screenshot"
+    },
+    {
+      "id": "battle_scene",
+      "displayName": "전투 화면",
+      "level1": "게임 관련",
+      "level2": "전투 화면",
+      "classifierKeywords": ["scoreboard", "stage", "volcano", "warplane", "weapon"],
+      "pathKeywords": ["battle", "combat", "raid", "boss", "전투"],
+      "prototypeId": "game"
+    },
+    {
+      "id": "dialog_scene",
+      "displayName": "대사/자막 중심",
+      "level1": "애니 관련",
+      "level2": "대사/자막 중심",
+      "classifierKeywords": ["comic book", "book jacket", "menu"],
+      "pathKeywords": ["subtitle", "dialog", "caption", "자막", "대사"],
+      "textKeywords": ["subtitle", "dialog", "chapter", "ep", "화"],
+      "prototypeId": "meme"
+    },
+    {
+      "id": "title_screen",
+      "displayName": "로고/타이틀 화면",
+      "level1": "게임 관련",
+      "level2": "로고/타이틀 화면",
+      "classifierKeywords": ["web site", "menu", "book jacket", "poster"],
+      "pathKeywords": ["title", "logo", "opening", "splash"],
+      "prototypeId": "screenshot"
+    }
+  ],
+  "seriesCatalog": [
+    {
+      "name": "원신",
+      "allowedLevel1": ["게임 관련"],
+      "keywords": ["genshin", "원신", "teyvat", "paimon", "hoyoverse"]
+    },
+    {
+      "name": "붕괴: 스타레일",
+      "allowedLevel1": ["게임 관련"],
+      "keywords": ["star rail", "honkai", "hsr", "붕괴", "스타레일"]
+    },
+    {
+      "name": "젠레스 존 제로",
+      "allowedLevel1": ["게임 관련"],
+      "keywords": ["zenless", "zzz", "젠레스", "new eridu"]
+    },
+    {
+      "name": "블루 아카이브",
+      "allowedLevel1": ["게임 관련", "일러스트"],
+      "keywords": ["blue archive", "블루아카", "블루 아카이브", "sensei"]
+    },
+    {
+      "name": "승리의 여신: 니케",
+      "allowedLevel1": ["게임 관련", "일러스트"],
+      "keywords": ["nikke", "니케", "goddess of victory"]
+    },
+    {
+      "name": "프로젝트 세카이",
+      "allowedLevel1": ["게임 관련", "애니 관련"],
+      "keywords": ["project sekai", "프로세카", "miku", "vocaloid"]
+    },
+    {
+      "name": "우마무스메",
+      "allowedLevel1": ["게임 관련", "애니 관련"],
+      "keywords": ["umamusume", "우마무스메", "트레센"]
+    },
+    {
+      "name": "페이트",
+      "allowedLevel1": ["애니 관련", "일러스트"],
+      "keywords": ["fate", "fgo", "servant", "페이트"]
+    },
+    {
+      "name": "귀멸의 칼날",
+      "allowedLevel1": ["애니 관련"],
+      "keywords": ["demon slayer", "kimetsu", "귀멸", "탄지로"]
+    },
+    {
+      "name": "주술회전",
+      "allowedLevel1": ["애니 관련"],
+      "keywords": ["jujutsu", "주술회전", "고죠", "유지"]
+    },
+    {
+      "name": "원피스",
+      "allowedLevel1": ["애니 관련"],
+      "keywords": ["one piece", "원피스", "루피", "조로"]
+    },
+    {
+      "name": "장송의 프리렌",
+      "allowedLevel1": ["애니 관련"],
+      "keywords": ["frieren", "프리렌", "fern", "stark"]
+    },
+    {
+      "name": "하츠네 미쿠",
+      "allowedLevel1": ["애니 관련", "일러스트"],
+      "keywords": ["miku", "하츠네 미쿠", "vocaloid"]
+    },
+    {
+      "name": "발로란트",
+      "allowedLevel1": ["게임 관련"],
+      "keywords": ["valorant", "발로란트", "riot", "vct"]
+    },
+    {
+      "name": "리그 오브 레전드",
+      "allowedLevel1": ["게임 관련"],
+      "keywords": ["league of legends", "lol", "리그 오브 레전드", "summoner's rift"]
+    },
+    {
+      "name": "오버워치",
+      "allowedLevel1": ["게임 관련"],
+      "keywords": ["overwatch", "오버워치", "blizzard"]
+    },
+    {
+      "name": "마인크래프트",
+      "allowedLevel1": ["게임 관련"],
+      "keywords": ["minecraft", "마인크래프트", "creeper", "steve"]
+    },
+    {
+      "name": "포켓몬",
+      "allowedLevel1": ["게임 관련", "애니 관련"],
+      "keywords": ["pokemon", "포켓몬", "pikachu", "pokeball"]
+    }
+  ]
+}
