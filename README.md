@@ -96,6 +96,7 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - MobileCLIP 점수는 raw cosine 절대값과 1, 2위 margin 으로 다시 보정한다. 즉 애매한 similarity 랭킹은 강한 `사람` / `캐릭터 중심` prior 로 바로 쓰지 않는다.
 - 얼굴이 없고 인물 키워드도 없는데 풍경 / 배경 / 일러스트 신호가 우세하면, `사람` / `셀카` / `캐릭터 중심`을 의도적으로 억제하고 `풍경` 또는 `배경 중심`을 더 우선한다.
 - `풍경` / `배경 중심` taxonomy 에 `moon`, `cloud`, `star`, `night`, `wallpaper`, `scenery` 같은 scenic illustration 키워드를 추가해 밤하늘 / 달 / 구름형 배경 이미지를 더 잘 받게 했다.
+- 대신 이 보정 이후 scenic artwork가 `기타 / 검토 필요`로 과하게 떨어지는 문제가 있어, 얼굴 없는 `풍경 / 그림 / 일러스트` 후보에는 일반 사람/애니 계열보다 느슨한 review fallback threshold 를 적용했다.
 
 ## 런타임 선택 이유
 

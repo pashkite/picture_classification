@@ -1768,6 +1768,21 @@ internal fun shouldUseReviewFallback(
         return false
     }
 
+    if (
+        candidateLevel1 in ScenicInterpretationLabels &&
+        auxiliary.faceCount == 0 &&
+        !hasStrongUiSignals &&
+        !hasStrongDocumentSignals
+    ) {
+        val scenicLowTopScore = topScore < ScenicConservativeTopScoreThreshold
+        val scenicLowMargin = (topScore - secondScore) < ScenicConservativeMarginThreshold
+        val scenicWeakSemanticSupport = classifierScore < ScenicClassifierThreshold &&
+            prototypeScore < ScenicPrototypeThreshold &&
+            clipScore < ScenicClipThreshold
+
+        return scenicLowTopScore && scenicLowMargin && scenicWeakSemanticSupport
+    }
+
     val lowTopScore = topScore < ConservativeTopScoreThreshold
     val lowMargin = (topScore - secondScore) < ConservativeMarginThreshold
     val weakSemanticSupport = classifierScore < ConservativeClassifierThreshold &&
@@ -2366,6 +2381,11 @@ private const val VeryLowTopScoreThreshold = 0.24f
 private const val ConservativeClassifierThreshold = 0.25f
 private const val ConservativePrototypeThreshold = 0.52f
 private const val ConservativeClipThreshold = 0.22f
+private const val ScenicConservativeTopScoreThreshold = 0.26f
+private const val ScenicConservativeMarginThreshold = 0.05f
+private const val ScenicClassifierThreshold = 0.10f
+private const val ScenicPrototypeThreshold = 0.26f
+private const val ScenicClipThreshold = 0.08f
 private const val MobileClipPrimaryWeight = 1.1f
 private const val MobileClipSecondaryWeight = 0.95f
 private const val AuxiliaryLabelMinimumScore = 0.18f
@@ -2383,6 +2403,11 @@ private val ConservativeInterpretationLabels = setOf(
     "애니 관련",
     "게임 관련",
     "밈"
+)
+private val ScenicInterpretationLabels = setOf(
+    "풍경",
+    "그림",
+    "일러스트"
 )
 private val HumanClassifierKeywords = listOf(
     "person",

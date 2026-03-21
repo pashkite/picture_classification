@@ -18,6 +18,9 @@
   - classifier human keyword 없음
   - 풍경 / 배경 / 일러스트 신호 우세
   조건일 때 `사람` / `셀카` / `캐릭터 중심`을 억제하고 `풍경` / `일러스트` / `배경 중심`을 밀어준다.
+- `shouldUseReviewFallback()` 완화
+  - 얼굴 없는 `풍경 / 그림 / 일러스트` 후보는 사람/애니 계열보다 느슨한 review threshold 를 적용한다.
+  - 그래서 scenic artwork가 `기타 / 검토 필요`로 과하게 떨어지는 현상을 줄였다.
 - scenic/background taxonomy keyword 보강
   - `moon`, `cloud`, `star`, `night`, `wallpaper`, `scenery` 등을 풍경 / 배경 계열에 추가했다.
 - 회귀 테스트 추가
@@ -73,6 +76,7 @@ git status --short --branch
 ## 7. 남은 한계점 및 TODO
 
 - 이번 수정은 학습 없는 threshold / taxonomy / fusion 보정이다. 전용 애니/게임/일러스트 의미 모델을 추가 학습한 것은 아니다.
+- scenic artwork 보수 규칙을 완화했기 때문에, 아주 약한 풍경 신호만 있는 이미지가 이전보다 `풍경`으로 남을 가능성은 약간 올라갔다.
 - `MobileCLIP prompt embeddings` 자체를 다시 생성하지는 못했다.
   - text encoder 자산이 저장소 안에 없어서, 프롬프트 내용과 임베딩을 동시에 업데이트하는 작업은 이번 범위에서 제외했다.
 - 사람 얼굴이 작거나 가려진 실제 사진은 보수 규칙 때문에 `풍경` 또는 `기타`로 갈 수 있다.

@@ -152,6 +152,60 @@ class ClassificationFusionHeuristicsTest {
     }
 
     @Test
+    fun shouldUseReviewFallback_returnsFalseForModerateScenicArtworkSignal() {
+        val shouldReview = shouldUseReviewFallback(
+            candidateLevel1 = "풍경",
+            topScore = 0.29f,
+            secondScore = 0.21f,
+            classifierScore = 0.11f,
+            prototypeScore = 0.28f,
+            clipScore = 0.09f,
+            auxiliary = MlKitAuxiliaryResult(
+                faceCount = 0,
+                centeredFaceScore = 0f,
+                recognizedText = "",
+                textLength = 0,
+                textLineCount = 0,
+                uiKeywordHits = emptyList(),
+                receiptKeywordHits = emptyList(),
+                auxiliaryTags = emptyList(),
+                reasoning = emptyList()
+            ),
+            hasStrongUiSignals = false,
+            hasStrongDocumentSignals = false
+        )
+
+        assertTrue(!shouldReview)
+    }
+
+    @Test
+    fun shouldUseReviewFallback_returnsTrueForVeryWeakScenicArtworkSignal() {
+        val shouldReview = shouldUseReviewFallback(
+            candidateLevel1 = "풍경",
+            topScore = 0.22f,
+            secondScore = 0.19f,
+            classifierScore = 0.05f,
+            prototypeScore = 0.18f,
+            clipScore = 0.04f,
+            auxiliary = MlKitAuxiliaryResult(
+                faceCount = 0,
+                centeredFaceScore = 0f,
+                recognizedText = "",
+                textLength = 0,
+                textLineCount = 0,
+                uiKeywordHits = emptyList(),
+                receiptKeywordHits = emptyList(),
+                auxiliaryTags = emptyList(),
+                reasoning = emptyList()
+            ),
+            hasStrongUiSignals = false,
+            hasStrongDocumentSignals = false
+        )
+
+        assertTrue(shouldReview)
+    }
+
+    @Test
     fun applyDominanceHeuristics_prefersBackgroundFocusForIllustrationWhenFaceIsTiny() {
         val primaryScores = mutableMapOf(
             "사람" to 1.05f,
