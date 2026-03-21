@@ -23,8 +23,8 @@
       "id": "landscape",
       "displayName": "풍경",
       "level1": "풍경",
-      "classifierKeywords": ["landscape", "mountain", "valley", "seashore", "lakeside", "sky", "forest", "beach", "sunset", "nature"],
-      "pathKeywords": ["travel", "trip", "landscape", "nature", "풍경", "여행"],
+      "classifierKeywords": ["landscape", "mountain", "valley", "seashore", "lakeside", "sky", "forest", "beach", "sunset", "nature", "moon", "cloud", "star", "night"],
+      "pathKeywords": ["travel", "trip", "landscape", "nature", "풍경", "여행", "wallpaper", "scenery"],
       "prototypeId": "landscape"
     },
     {
@@ -180,8 +180,8 @@
       "displayName": "배경 중심",
       "level1": "일러스트",
       "level2": "배경 중심",
-      "classifierKeywords": ["illustration", "painting", "art", "landscape", "seashore", "mountain", "palace", "forest", "sky"],
-      "pathKeywords": ["background", "scenery", "wallpaper", "landscape", "배경"],
+      "classifierKeywords": ["illustration", "painting", "art", "landscape", "seashore", "mountain", "palace", "forest", "sky", "moon", "cloud", "star", "night"],
+      "pathKeywords": ["background", "scenery", "wallpaper", "landscape", "배경", "풍경"],
       "prototypeId": "illustration"
     },
     {
@@ -189,8 +189,8 @@
       "displayName": "배경 중심",
       "level1": "애니 관련",
       "level2": "배경 중심",
-      "classifierKeywords": ["animation", "cartoon", "landscape", "seashore", "mountain", "temple", "streetcar"],
-      "pathKeywords": ["anime background", "scenery", "wallpaper", "배경"],
+      "classifierKeywords": ["animation", "cartoon", "landscape", "seashore", "mountain", "temple", "streetcar", "sky", "cloud", "moon", "star"],
+      "pathKeywords": ["anime background", "scenery", "wallpaper", "배경", "풍경"],
       "prototypeId": "anime"
     },
     {
@@ -198,8 +198,8 @@
       "displayName": "배경 중심",
       "level1": "게임 관련",
       "level2": "배경 중심",
-      "classifierKeywords": ["landscape", "valley", "mountain", "castle", "stage", "forest"],
-      "pathKeywords": ["background", "map", "field", "landscape", "배경"],
+      "classifierKeywords": ["landscape", "valley", "mountain", "castle", "stage", "forest", "sky", "cloud", "moon"],
+      "pathKeywords": ["background", "map", "field", "landscape", "배경", "풍경"],
       "prototypeId": "game"
     },
     {
@@ -207,8 +207,8 @@
       "displayName": "배경 중심",
       "level1": "그림",
       "level2": "배경 중심",
-      "classifierKeywords": ["drawing", "sketch", "landscape", "house", "bridge"],
-      "pathKeywords": ["background", "landscape", "scenery", "배경"],
+      "classifierKeywords": ["drawing", "sketch", "landscape", "house", "bridge", "sky", "cloud", "moon"],
+      "pathKeywords": ["background", "landscape", "scenery", "배경", "풍경"],
       "prototypeId": "drawing"
     },
     {

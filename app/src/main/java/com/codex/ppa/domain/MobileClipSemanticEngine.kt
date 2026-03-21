@@ -54,6 +54,13 @@ internal data class LoadedMobileClipPromptCatalog(
     val entries: List<LoadedMobileClipPromptEntry>
 )
 
+internal data class SimilarityCalibrationResult(
+    val signals: List<ScoredSignal>,
+    val topRawScore: Float = 0f,
+    val secondRawScore: Float = 0f,
+    val calibration: Float = 0f
+)
+
 internal class MobileClipVisionModelProvider(
     private val context: Context
 ) : ModelProvider {
@@ -196,24 +203,31 @@ internal class MobileClipSemanticInferenceEngine(
             val primarySignals = scorePromptEntries(embedding, promptCatalog.entries.filter { it.level == "primary" })
             val secondarySignals = scorePromptEntries(embedding, promptCatalog.entries.filter { it.level == "secondary" })
 
-            primaryFrameScores += primarySignals.associate { it.label to it.score }
-            secondaryFrameScores += secondarySignals.associate { it.label to it.score }
+            primaryFrameScores += primarySignals.signals.associate { it.label to it.score }
+            secondaryFrameScores += secondarySignals.signals.associate { it.label to it.score }
 
             frameSummaries += FrameDebugInfo(
                 frameLabel = frame.label,
                 timestampMs = frame.timestampMs,
                 summary = buildString {
-                    if (primarySignals.isNotEmpty()) {
+                    if (primarySignals.signals.isNotEmpty()) {
                         append("MobileCLIP 1차 ")
-                        append(primarySignals.take(3).joinToString { "${it.label}:${mobileClipFormatScore(it.score)}" })
+                        append(primarySignals.signals.take(3).joinToString { "${it.label}:${mobileClipFormatScore(it.score)}" })
                     }
-                    if (secondarySignals.isNotEmpty()) {
+                    if (secondarySignals.signals.isNotEmpty()) {
                         append(" · 2차 ")
-                        append(secondarySignals.take(2).joinToString { "${it.label}:${mobileClipFormatScore(it.score)}" })
+                        append(secondarySignals.signals.take(2).joinToString { "${it.label}:${mobileClipFormatScore(it.score)}" })
                     }
                 },
-                tags = (primarySignals.take(3) + secondarySignals.take(2)).take(5),
-                notes = listOf("CLIP류 vision encoder 유사도 기반 랭킹")
+                tags = (primarySignals.signals.take(3) + secondarySignals.signals.take(2)).take(5),
+                notes = buildList {
+                    add("CLIP류 vision encoder 유사도 기반 랭킹")
+                    add(
+                        "1차 raw ${mobileClipFormatScore(primarySignals.topRawScore)} / " +
+                            "margin ${mobileClipFormatScore((primarySignals.topRawScore - primarySignals.secondRawScore).coerceAtLeast(0f))} / " +
+                            "보정 ${mobileClipFormatScore(primarySignals.calibration)}"
+                    )
+                }
             )
         }
 
@@ -308,9 +322,9 @@ internal class MobileClipSemanticInferenceEngine(
     private fun scorePromptEntries(
         imageEmbedding: FloatArray,
         entries: List<LoadedMobileClipPromptEntry>
-    ): List<ScoredSignal> {
+    ): SimilarityCalibrationResult {
         if (entries.isEmpty()) {
-            return emptyList()
+            return SimilarityCalibrationResult(emptyList())
         }
 
         val rawScores = entries.map { entry ->
@@ -318,10 +332,10 @@ internal class MobileClipSemanticInferenceEngine(
         }.filter { (_, score) -> score.isFinite() }
 
         if (rawScores.isEmpty()) {
-            return emptyList()
+            return SimilarityCalibrationResult(emptyList())
         }
 
-        return softmaxSimilaritySignals(rawScores, MobileClipSoftmaxTemperature)
+        return calibratedSimilaritySignals(rawScores, MobileClipSoftmaxTemperature)
     }
 
     private fun centerCropAndResize(bitmap: Bitmap, size: Int): Bitmap {
@@ -390,6 +404,42 @@ private fun mobileClipCosineSimilarity(first: FloatArray, second: FloatArray): F
     return (dot / (kotlin.math.sqrt(firstNorm) * kotlin.math.sqrt(secondNorm))).coerceIn(-1f, 1f)
 }
 
+internal fun calibratedSimilaritySignals(
+    rawScores: List<Pair<String, Float>>,
+    temperature: Float
+): SimilarityCalibrationResult {
+    if (rawScores.isEmpty()) {
+        return SimilarityCalibrationResult(emptyList())
+    }
+
+    val rankedRawScores = rawScores.sortedByDescending { it.second }
+    val topRawScore = rankedRawScores.first().second
+    val secondRawScore = rankedRawScores.getOrNull(1)?.second ?: topRawScore
+    val margin = (topRawScore - secondRawScore).coerceAtLeast(0f)
+    val absoluteScale = (
+        (topRawScore - MobileClipLowRawSimilarity) /
+            (MobileClipHighRawSimilarity - MobileClipLowRawSimilarity)
+        ).coerceIn(0f, 1f)
+    val marginScale = (margin / MobileClipConfidentMargin).coerceIn(0f, 1f)
+    val calibration = (
+        MobileClipMinimumCalibration +
+            (absoluteScale * 0.45f) +
+            (marginScale * 0.4f)
+        ).coerceIn(MobileClipMinimumCalibration, 1f)
+
+    val signals = softmaxSimilaritySignals(rawScores, temperature)
+        .map { signal ->
+            signal.copy(score = (signal.score * calibration).coerceAtLeast(0f))
+        }
+
+    return SimilarityCalibrationResult(
+        signals = signals,
+        topRawScore = topRawScore,
+        secondRawScore = secondRawScore,
+        calibration = calibration
+    )
+}
+
 internal fun softmaxSimilaritySignals(
     rawScores: List<Pair<String, Float>>,
     temperature: Float
@@ -410,3 +460,7 @@ internal fun softmaxSimilaritySignals(
 }
 
 private const val MobileClipLogTag = "MobileClipEngine"
+private const val MobileClipMinimumCalibration = 0.12f
+private const val MobileClipLowRawSimilarity = 0.16f
+private const val MobileClipHighRawSimilarity = 0.32f
+private const val MobileClipConfidentMargin = 0.08f

@@ -1225,6 +1225,7 @@ internal class ClassificationPipeline(
             auxiliary = auxiliary,
             searchableText = searchableText,
             semantic = semantic,
+            clipSemantic = clipSemantic,
             hasStrongUiSignals = hasStrongUiSignals,
             hasStrongDocumentSignals = hasStrongDocumentSignals,
             hasGameSignals = hasGameSignals,
@@ -1596,6 +1597,7 @@ internal fun applyDominanceHeuristics(
     auxiliary: MlKitAuxiliaryResult,
     searchableText: String,
     semantic: SemanticInferenceResult?,
+    clipSemantic: MobileClipSemanticResult?,
     hasStrongUiSignals: Boolean,
     hasStrongDocumentSignals: Boolean,
     hasGameSignals: Boolean,
@@ -1641,9 +1643,15 @@ internal fun applyDominanceHeuristics(
     val artSemanticScore = (semantic?.primaryScores?.get("일러스트") ?: 0f) +
         (semantic?.primaryScores?.get("애니 관련") ?: 0f) +
         (semantic?.primaryScores?.get("그림") ?: 0f)
+    val clipArtPrimaryScore = (clipSemantic?.primaryScores?.get("일러스트") ?: 0f) +
+        (clipSemantic?.primaryScores?.get("애니 관련") ?: 0f) +
+        (clipSemantic?.primaryScores?.get("그림") ?: 0f)
     val artSecondaryScore = (semantic?.secondaryScores?.get("일반 일러스트") ?: 0f) +
         (semantic?.secondaryScores?.get("배경 중심") ?: 0f) +
         (semantic?.secondaryScores?.get("애니 이미지") ?: 0f)
+    val clipArtSecondaryScore = (clipSemantic?.secondaryScores?.get("일반 일러스트") ?: 0f) +
+        (clipSemantic?.secondaryScores?.get("배경 중심") ?: 0f) +
+        (clipSemantic?.secondaryScores?.get("애니 이미지") ?: 0f)
     val weakFaceSubject = auxiliary.faceCount == 0 ||
         (auxiliary.maxFaceAreaRatio < MediumFaceAreaRatio &&
             auxiliary.centeredFaceScore < MediumCenteredFaceScore)
@@ -1658,6 +1666,48 @@ internal fun applyDominanceHeuristics(
         "배경",
         "풍경"
     )
+    val hasExplicitHumanTextSignal = searchableText.containsAny(
+        "person",
+        "portrait",
+        "selfie",
+        "family",
+        "friends",
+        "human",
+        "인물",
+        "사람",
+        "셀카"
+    )
+    val hasHumanClassifierSignal = semantic?.classifierTags.orEmpty().any { tag ->
+        tag.score >= 0.16f &&
+            HumanClassifierKeywords.any { keyword -> tag.label.contains(keyword, ignoreCase = true) }
+    }
+    val hasScenicClassifierSignal = semantic?.classifierTags.orEmpty().any { tag ->
+        tag.score >= 0.12f &&
+            ScenicClassifierKeywords.any { keyword -> tag.label.contains(keyword, ignoreCase = true) }
+    }
+    val hasScenicClipSignal = clipSemantic?.tags.orEmpty().any { signal ->
+        signal.score >= 0.16f && signal.label in ScenicClipLabels
+    }
+    val scenicPrimaryScore = (semantic?.primaryScores?.get("풍경") ?: 0f) +
+        (clipSemantic?.primaryScores?.get("풍경") ?: 0f)
+    val backgroundSecondaryScore = max(
+        semantic?.secondaryScores?.get("배경 중심") ?: 0f,
+        clipSemantic?.secondaryScores?.get("배경 중심") ?: 0f
+    )
+    val noFaceScenicArtworkCandidate = !hasStrongUiSignals &&
+        !hasStrongDocumentSignals &&
+        !hasGameSignals &&
+        auxiliary.faceCount == 0 &&
+        !hasExplicitHumanTextSignal &&
+        !hasHumanClassifierSignal &&
+        (
+            scenicPrimaryScore >= 0.28f ||
+                backgroundSecondaryScore >= 0.26f ||
+                (artSemanticScore + clipArtPrimaryScore + artSecondaryScore + clipArtSecondaryScore) >= 0.92f ||
+                hasBackgroundArtworkSignal ||
+                hasScenicClassifierSignal ||
+                hasScenicClipSignal
+            )
 
     if (!hasStrongUiSignals && !hasStrongDocumentSignals && !hasGameSignals) {
         if ((artSemanticScore + artSecondaryScore) >= 0.9f && weakFaceSubject) {
@@ -1671,6 +1721,28 @@ internal fun applyDominanceHeuristics(
             secondaryScores.merge("캐릭터 중심", 0.28f, Float::plus)
             reasoning += "일러스트 계열이지만 얼굴 비중이 충분해 캐릭터 중심 후보를 유지했다."
         }
+    }
+
+    if (noFaceScenicArtworkCandidate) {
+        decreaseScore(primaryScores, "사람", 1.2f)
+        decreaseScore(primaryScores, "셀카", 1.3f)
+        decreaseScore(secondaryScores, "캐릭터 중심", 0.82f)
+
+        if (scenicPrimaryScore > 0f || hasScenicClassifierSignal || hasScenicClipSignal) {
+            primaryScores.merge("풍경", 0.82f, Float::plus)
+        }
+        if (backgroundSecondaryScore > 0f || (artSemanticScore + clipArtPrimaryScore) >= 0.35f || hasBackgroundArtworkSignal) {
+            primaryScores.merge("일러스트", 0.48f, Float::plus)
+            secondaryScores.merge("배경 중심", 0.96f, Float::plus)
+        }
+        if ((semantic?.primaryScores?.get("애니 관련") ?: 0f) + (clipSemantic?.primaryScores?.get("애니 관련") ?: 0f) >= 0.48f) {
+            primaryScores.merge("애니 관련", 0.18f, Float::plus)
+        }
+
+        reasoning += "얼굴과 명시적 인물 근거 없이 풍경/배경 신호가 우세해 사람/인물 중심을 억제했다."
+    } else if (auxiliary.faceCount == 0 && !hasExplicitHumanTextSignal && !hasHumanClassifierSignal) {
+        decreaseScore(primaryScores, "셀카", 0.55f)
+        reasoning += "얼굴이나 명시적 인물 근거가 없어 셀카 점수를 보수적으로 낮췄다."
     }
 }
 
@@ -2311,6 +2383,39 @@ private val ConservativeInterpretationLabels = setOf(
     "애니 관련",
     "게임 관련",
     "밈"
+)
+private val HumanClassifierKeywords = listOf(
+    "person",
+    "human",
+    "portrait",
+    "face",
+    "man",
+    "woman",
+    "boy",
+    "girl",
+    "bride",
+    "groom"
+)
+private val ScenicClassifierKeywords = listOf(
+    "landscape",
+    "seashore",
+    "mountain",
+    "valley",
+    "forest",
+    "sky",
+    "cloud",
+    "moon",
+    "star",
+    "night",
+    "sunset",
+    "nature"
+)
+private val ScenicClipLabels = setOf(
+    "풍경",
+    "일러스트",
+    "애니 관련",
+    "일반 일러스트",
+    "배경 중심"
 )
 private val LabelMapDictEntryRegex = Regex("""^\s*(\d+)\s*:\s*['"](.+?)['"]\s*$""")
 private const val LogTag = "VisionPipeline"

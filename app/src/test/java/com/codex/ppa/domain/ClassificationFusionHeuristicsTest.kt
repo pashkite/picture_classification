@@ -40,6 +40,7 @@ class ClassificationFusionHeuristicsTest {
                 reasoning = emptyList(),
                 reducedMode = false
             ),
+            clipSemantic = null,
             hasStrongUiSignals = true,
             hasStrongDocumentSignals = false,
             hasGameSignals = true,
@@ -85,6 +86,7 @@ class ClassificationFusionHeuristicsTest {
                 reasoning = emptyList(),
                 reducedMode = false
             ),
+            clipSemantic = null,
             hasStrongUiSignals = false,
             hasStrongDocumentSignals = true,
             hasGameSignals = false,
@@ -188,6 +190,15 @@ class ClassificationFusionHeuristicsTest {
                 reasoning = emptyList(),
                 reducedMode = false
             ),
+            clipSemantic = MobileClipSemanticResult(
+                primaryScores = mapOf("일러스트" to 0.26f),
+                secondaryScores = mapOf("배경 중심" to 0.33f),
+                tags = listOf(ScoredSignal("배경 중심", 0.33f)),
+                reasoning = emptyList(),
+                loaded = true,
+                invoked = true,
+                reducedMode = false
+            ),
             hasStrongUiSignals = false,
             hasStrongDocumentSignals = false,
             hasGameSignals = false,
@@ -237,6 +248,15 @@ class ClassificationFusionHeuristicsTest {
                 reasoning = emptyList(),
                 reducedMode = false
             ),
+            clipSemantic = MobileClipSemanticResult(
+                primaryScores = mapOf("애니 관련" to 0.44f),
+                secondaryScores = mapOf("캐릭터 중심" to 0.29f),
+                tags = listOf(ScoredSignal("캐릭터 중심", 0.29f)),
+                reasoning = emptyList(),
+                loaded = true,
+                invoked = true,
+                reducedMode = false
+            ),
             hasStrongUiSignals = false,
             hasStrongDocumentSignals = false,
             hasGameSignals = false,
@@ -244,6 +264,74 @@ class ClassificationFusionHeuristicsTest {
         )
 
         assertTrue(secondaryScores.getValue("캐릭터 중심") > secondaryScores.getValue("배경 중심"))
+    }
+
+    @Test
+    fun applyDominanceHeuristics_demotesPersonForScenicArtworkWithoutFace() {
+        val primaryScores = mutableMapOf(
+            "사람" to 0.98f,
+            "풍경" to 0.34f,
+            "일러스트" to 0.29f
+        )
+        val secondaryScores = mutableMapOf(
+            "캐릭터 중심" to 0.41f,
+            "배경 중심" to 0.24f,
+            "일반 일러스트" to 0.17f
+        )
+        val reasoning = mutableListOf<String>()
+
+        applyDominanceHeuristics(
+            primaryScores = primaryScores,
+            secondaryScores = secondaryScores,
+            auxiliary = MlKitAuxiliaryResult(
+                faceCount = 0,
+                centeredFaceScore = 0f,
+                maxFaceAreaRatio = 0f,
+                maxFaceCenteredness = 0f,
+                recognizedText = "",
+                textLength = 0,
+                textLineCount = 0,
+                uiKeywordHits = emptyList(),
+                receiptKeywordHits = emptyList(),
+                auxiliaryTags = listOf(ScoredSignal("sky", 0.34f)),
+                reasoning = emptyList()
+            ),
+            searchableText = "wallpaper scenery night sky moon cloud",
+            semantic = SemanticInferenceResult(
+                primaryScores = mapOf("풍경" to 0.43f, "일러스트" to 0.36f),
+                secondaryScores = mapOf("배경 중심" to 0.47f, "일반 일러스트" to 0.22f),
+                classifierTags = listOf(
+                    ScoredSignal("sky", 0.41f),
+                    ScoredSignal("moon", 0.28f)
+                ),
+                prototypeTags = listOf(
+                    ScoredSignal("풍경", 0.52f),
+                    ScoredSignal("일러스트", 0.48f)
+                ),
+                reasoning = emptyList(),
+                reducedMode = false
+            ),
+            clipSemantic = MobileClipSemanticResult(
+                primaryScores = mapOf("풍경" to 0.22f, "일러스트" to 0.18f),
+                secondaryScores = mapOf("배경 중심" to 0.31f),
+                tags = listOf(
+                    ScoredSignal("풍경", 0.22f),
+                    ScoredSignal("배경 중심", 0.31f)
+                ),
+                reasoning = emptyList(),
+                loaded = true,
+                invoked = true,
+                reducedMode = false
+            ),
+            hasStrongUiSignals = false,
+            hasStrongDocumentSignals = false,
+            hasGameSignals = false,
+            reasoning = reasoning
+        )
+
+        assertTrue(primaryScores.getValue("풍경") > primaryScores.getValue("사람"))
+        assertTrue(secondaryScores.getValue("배경 중심") > secondaryScores.getValue("캐릭터 중심"))
+        assertTrue(reasoning.any { it.contains("풍경/배경 신호") })
     }
 
     @Test

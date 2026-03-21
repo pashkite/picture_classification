@@ -10,7 +10,7 @@ class OnDeviceAiClassificationEngine(
 ) : ClassificationEngine {
     override val engineId: String = "hybrid-mlkit-mediapipe"
     override val displayName: String = "하이브리드 자동분류 (EfficientNet-Lite4 + MobileCLIP2-S0 + ImageEmbedder + ML Kit)"
-    override val engineVersion: String = "efficientnet-lite4-fp32 + mobileclip2-s0-onnx + mediapipe-0.10.29 + mlkit-bundled + rules-v4"
+    override val engineVersion: String = "efficientnet-lite4-fp32 + mobileclip2-s0-onnx + mediapipe-0.10.29 + mlkit-bundled + rules-v5"
 
     private val appContext = context.applicationContext
     private val taxonomy by lazy { VisionTaxonomyLoader.load(appContext) }

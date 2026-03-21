@@ -29,4 +29,35 @@ class MobileClipSemanticEngineTest {
 
         assertTrue(ranked.isEmpty())
     }
+
+    @Test
+    fun calibratedSimilaritySignals_downweightsAmbiguousScores() {
+        val result = calibratedSimilaritySignals(
+            rawScores = listOf(
+                "사람" to 0.211f,
+                "풍경" to 0.205f,
+                "일러스트" to 0.202f
+            ),
+            temperature = 12f
+        )
+
+        assertTrue(result.calibration < 0.4f)
+        assertTrue(result.signals.first().score < 0.2f)
+    }
+
+    @Test
+    fun calibratedSimilaritySignals_preservesStrongDistinctSignal() {
+        val result = calibratedSimilaritySignals(
+            rawScores = listOf(
+                "풍경" to 0.341f,
+                "일러스트" to 0.214f,
+                "사람" to 0.163f
+            ),
+            temperature = 12f
+        )
+
+        assertEquals("풍경", result.signals.first().label)
+        assertTrue(result.calibration > 0.8f)
+        assertTrue(result.signals.first().score > 0.7f)
+    }
 }

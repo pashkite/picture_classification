@@ -93,6 +93,9 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - 동영상 프레임 집계는 단순 평균이 아니라 단일 outlier 프레임을 덜 믿는 robust aggregation 으로 바꿨다.
 - fallback 규칙의 `사람 / 셀카 -> 캐릭터 중심` prior 를 `인물 중심`으로 교정했다.
 - `MobileCLIP2-S0` vision encoder 를 추가해 사전 계산한 프롬프트 임베딩과의 의미 유사도를 1차/2차 분류 보강에 사용한다.
+- MobileCLIP 점수는 raw cosine 절대값과 1, 2위 margin 으로 다시 보정한다. 즉 애매한 similarity 랭킹은 강한 `사람` / `캐릭터 중심` prior 로 바로 쓰지 않는다.
+- 얼굴이 없고 인물 키워드도 없는데 풍경 / 배경 / 일러스트 신호가 우세하면, `사람` / `셀카` / `캐릭터 중심`을 의도적으로 억제하고 `풍경` 또는 `배경 중심`을 더 우선한다.
+- `풍경` / `배경 중심` taxonomy 에 `moon`, `cloud`, `star`, `night`, `wallpaper`, `scenery` 같은 scenic illustration 키워드를 추가해 밤하늘 / 달 / 구름형 배경 이미지를 더 잘 받게 했다.
 
 ## 런타임 선택 이유
 
@@ -162,13 +165,13 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 최종 분류는 단순 덮어쓰기가 아니라 점수 기반 융합으로 만든다.
 
 - Lite4 classifier 점수는 기본 의미 점수로 사용
-- MobileCLIP prompt similarity 는 추가 의미 점수로 사용하고, 이번 버전에서는 Lite4보다 조금 더 강한 보강 가중치를 준다.
+- MobileCLIP prompt similarity 는 추가 의미 점수로 사용하지만, raw cosine 자체가 약하거나 margin 이 작으면 보수적으로 약화한다.
 - MediaPipe embedder는 로컬 프로토타입 이미지와의 유사도로 스타일 점수를 보강
 - OCR 텍스트가 많으면 문서 / 영수증 / 스크린샷 가중치 상승
 - 얼굴 수만으로는 부족하고, 얼굴 면적 비율과 중앙도가 충분할 때만 사람 / 셀카 가중치를 강하게 올린다.
 - UI 키워드가 많으면 스크린샷 / 게임 관련 / UI 중심 가중치 상승
 - ML Kit 이미지 라벨은 낮은 가중치의 보조 prior 로만 반영한다.
-- 배경 일러스트 신호가 강하고 얼굴 비중이 작으면 `캐릭터 중심`보다 `배경 중심`을 우선한다.
+- 얼굴이 전혀 없고 명시적 인물 근거가 없는데도 풍경 / 배경 / 일러스트 신호가 강하면 `사람`보다 `풍경` / `일러스트`, `캐릭터 중심`보다 `배경 중심`을 우선한다.
 - 파일명 / 상대 경로 기반 규칙은 약한 prior로만 사용
 - 동영상 프레임은 단순 평균이 아니라 극단값을 덜 믿는 robust aggregation 으로 집계한다.
 - Lite4 top score와 2위 score 차이가 작고 ML Kit / embedder 보조 신호도 약하면 `기타 / 검토 필요`로 폴백
@@ -207,7 +210,7 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
       },
       "engineInfo": {
         "engineId": "hybrid-mlkit-mediapipe",
-        "engineVersion": "efficientnet-lite4-fp32 + mobileclip2-s0-onnx + mediapipe-0.10.29 + mlkit-bundled + rules-v4"
+        "engineVersion": "efficientnet-lite4-fp32 + mobileclip2-s0-onnx + mediapipe-0.10.29 + mlkit-bundled + rules-v5"
       },
       "debugInfo": {
         "confidence": 0.81,
