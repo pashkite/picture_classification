@@ -13,6 +13,7 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - 자동분류 진행 중 이동 개수 실시간 반영
 - 자동분류 종료 후 마지막 처리/이동 요약 유지
 - 상세 화면의 개별 `AI 자동분류 제안 적용`
+- 상세 화면의 엔진별 실행 여부, 축소 모드, 대표 프레임 근거 디버그 카드
 - 설정 화면의 엔진 상태, 알림 설정, 백업 자리 표시
 - `manifest.json` 기반 로컬 저장과 앱 재실행 후 재로드
 
@@ -32,6 +33,30 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
   - Image Labeling
 - 최후 fallback: 파일명 / 경로 / MIME 기반 규칙 엔진
 
+### 현재 실제 분류 파이프라인
+
+1. `MediaFrameSampler`
+   - 이미지: 대표 썸네일 1장
+   - 동영상: 20% / 50% / 80% 대표 프레임 3장
+2. `MainImageClassifier`
+   - `efficientnet-lite4.tflite`
+   - 우선 `MediaPipe ImageClassifier`
+   - 실패 시 같은 Lite4 모델을 `TensorFlow Lite Interpreter`로 직접 실행
+3. `MediaPipe ImageEmbedder`
+   - `mobilenet_v3_small.tflite`
+   - 로컬 프로토타입 이미지와의 유사도 계산
+4. `ML Kit`
+   - Face Detection
+   - Text Recognition
+   - Image Labeling
+5. `ClassificationPipeline`
+   - 프레임별 점수 집계
+   - taxonomy 매핑
+   - 얼굴/텍스트/UI/영수증/보조 라벨 점수 보정
+   - 안전 폴백과 시리즈 후보 생성
+
+상세 화면 디버그 카드에서 현재 항목의 `main-image-classifier`, `mediapipe-image-embedder`, `mlkit-face`, `mlkit-text`, `mlkit-label` 실제 실행 여부와 프레임별 요약을 바로 볼 수 있다.
+
 ### 역할 분담
 
 - `EfficientNet-Lite4`
@@ -43,9 +68,20 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - `ML Kit`
   - 얼굴 수와 중앙 얼굴 강도 기반 셀카 / 인물 보조 판별
   - OCR 기반 문서 / 영수증 / 스크린샷 / UI 텍스트 힌트 추출
-  - 이미지 라벨은 보조 태그로만 사용
+  - 이미지 라벨은 낮은 가중치의 보조 prior 로만 사용
 - `BasicSuggestionClassifier`
   - 모델 로딩 실패 또는 낮은 신뢰도 상황에서만 약한 prior로 사용
+
+## 이번 정확도 수정 핵심
+
+특히 `배경 일러스트 -> 사람 / 캐릭터 중심` 오분류를 줄이도록 아래를 조정했다.
+
+- `vision_taxonomy.json`에 `배경 중심` 2차 분류를 추가했다.
+- `캐릭터 중심` taxonomy 가 일반 `person / portrait / face`를 곧바로 받지 않도록 `fictional character / cartoon / animation` 위주로 축소했다.
+- 작은 얼굴 1개만 검출된 경우 사람 / 셀카 강가중치를 주지 않도록, 얼굴 면적 비율과 중앙도를 함께 보게 했다.
+- `ML Kit Image Labeling` 결과를 실제 융합에 넣되, 주 분류를 덮지 못하도록 낮은 가중치의 보조 prior 로만 반영했다.
+- 동영상 프레임 집계는 단순 평균이 아니라 단일 outlier 프레임을 덜 믿는 robust aggregation 으로 바꿨다.
+- fallback 규칙의 `사람 / 셀카 -> 캐릭터 중심` prior 를 `인물 중심`으로 교정했다.
 
 ## 런타임 선택 이유
 
@@ -85,6 +121,7 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - 애니 이미지
 - 게임 이미지
 - 일반 일러스트
+- 배경 중심
 - 만화풍/웹툰풍
 - 팬아트 가능성
 - 캐릭터 중심
@@ -114,16 +151,21 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - Lite4 classifier 점수는 기본 의미 점수로 사용
 - MediaPipe embedder는 로컬 프로토타입 이미지와의 유사도로 스타일 점수를 보강
 - OCR 텍스트가 많으면 문서 / 영수증 / 스크린샷 가중치 상승
-- 얼굴 수와 중앙 얼굴 강도가 높으면 사람 / 셀카 가중치 상승
+- 얼굴 수만으로는 부족하고, 얼굴 면적 비율과 중앙도가 충분할 때만 사람 / 셀카 가중치를 강하게 올린다.
 - UI 키워드가 많으면 스크린샷 / 게임 관련 / UI 중심 가중치 상승
+- ML Kit 이미지 라벨은 낮은 가중치의 보조 prior 로만 반영한다.
+- 배경 일러스트 신호가 강하고 얼굴 비중이 작으면 `캐릭터 중심`보다 `배경 중심`을 우선한다.
 - 파일명 / 상대 경로 기반 규칙은 약한 prior로만 사용
+- 동영상 프레임은 단순 평균이 아니라 극단값을 덜 믿는 robust aggregation 으로 집계한다.
 - Lite4 top score와 2위 score 차이가 작고 ML Kit / embedder 보조 신호도 약하면 `기타 / 검토 필요`로 폴백
 
 추론 결과에는 다음이 함께 저장된다.
 
+- 사용된 엔진 목록
 - 모델별 원시 태그
 - 최종 후보 점수
 - 시리즈 후보 목록
+- 대표 프레임별 요약
 - 최종 근거 문자열
 - 축소 모드 여부
 
@@ -188,6 +230,8 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - ML Kit 보조 신호와 규칙 기반 분류만 사용
 - 설정 화면과 상세 화면 디버그 카드에 축소 모드 여부를 표시
 - 저장 manifest에도 `debugInfo.reducedMode=true`가 남는다
+
+`fallbackUsed=true`는 대표 프레임을 읽지 못했거나, Lite4 / embedder 계열을 쓸 수 없어 사실상 규칙 기반 축소 모드로 내려간 경우에만 표시한다. 일반 normal mode 에서의 파일명 / 경로 prior 는 약한 보조 신호로만 처리한다.
 
 ## 설정 화면에서 확인 가능한 것
 

@@ -95,18 +95,33 @@ data class ClassificationEngineInfo(
 data class ClassificationDebugInfo(
     val confidence: Float = 0f,
     val reducedMode: Boolean = false,
+    val fallbackUsed: Boolean = false,
+    val usedEngines: List<String> = emptyList(),
     val reasoning: List<String> = emptyList(),
     val finalScores: List<ScoredSignal> = emptyList(),
     val seriesCandidates: List<ScoredSignal> = emptyList(),
-    val modelOutputs: List<ModelDebugInfo> = emptyList()
+    val modelOutputs: List<ModelDebugInfo> = emptyList(),
+    val frameSummaries: List<FrameDebugInfo> = emptyList()
 )
 
 @Serializable
 data class ModelDebugInfo(
     val modelId: String,
     val displayName: String,
+    val loaded: Boolean = false,
+    val invoked: Boolean = false,
     val summary: String = "",
-    val tags: List<ScoredSignal> = emptyList()
+    val tags: List<ScoredSignal> = emptyList(),
+    val notes: List<String> = emptyList()
+)
+
+@Serializable
+data class FrameDebugInfo(
+    val frameLabel: String,
+    val timestampMs: Long? = null,
+    val summary: String = "",
+    val tags: List<ScoredSignal> = emptyList(),
+    val notes: List<String> = emptyList()
 )
 
 @Serializable

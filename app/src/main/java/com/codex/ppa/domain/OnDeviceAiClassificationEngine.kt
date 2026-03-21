@@ -63,6 +63,8 @@ class OnDeviceAiClassificationEngine(
             return fallbackSuggestion?.copy(
                 engineInfo = engineInfo,
                 debugInfo = fallbackSuggestion.debugInfo?.copy(
+                    fallbackUsed = true,
+                    usedEngines = listOf("rule-based-fallback"),
                     reasoning = listOf("대표 프레임을 읽지 못해 규칙 기반 축소 모드로 처리") +
                         fallbackSuggestion.debugInfo.reasoning,
                     reducedMode = true

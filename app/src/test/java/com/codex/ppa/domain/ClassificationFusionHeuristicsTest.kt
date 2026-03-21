@@ -146,4 +146,122 @@ class ClassificationFusionHeuristicsTest {
 
         assertTrue(!shouldReview)
     }
+
+    @Test
+    fun applyDominanceHeuristics_prefersBackgroundFocusForIllustrationWhenFaceIsTiny() {
+        val primaryScores = mutableMapOf(
+            "사람" to 1.05f,
+            "일러스트" to 0.96f,
+            "애니 관련" to 0.48f
+        )
+        val secondaryScores = mutableMapOf(
+            "캐릭터 중심" to 0.72f,
+            "일반 일러스트" to 0.31f,
+            "배경 중심" to 0.28f
+        )
+        val reasoning = mutableListOf<String>()
+
+        applyDominanceHeuristics(
+            primaryScores = primaryScores,
+            secondaryScores = secondaryScores,
+            auxiliary = MlKitAuxiliaryResult(
+                faceCount = 1,
+                centeredFaceScore = 0.41f,
+                maxFaceAreaRatio = 0.02f,
+                maxFaceCenteredness = 0.46f,
+                recognizedText = "",
+                textLength = 0,
+                textLineCount = 0,
+                uiKeywordHits = emptyList(),
+                receiptKeywordHits = emptyList(),
+                auxiliaryTags = listOf(ScoredSignal("illustration", 0.42f)),
+                reasoning = emptyList()
+            ),
+            searchableText = "illust wallpaper background scenery",
+            semantic = SemanticInferenceResult(
+                primaryScores = mapOf("일러스트" to 0.88f, "애니 관련" to 0.31f),
+                secondaryScores = mapOf("일반 일러스트" to 0.58f, "배경 중심" to 0.52f),
+                classifierTags = listOf(ScoredSignal("illustration", 0.61f)),
+                prototypeTags = listOf(ScoredSignal("일러스트", 0.66f)),
+                reasoning = emptyList(),
+                reducedMode = false
+            ),
+            hasStrongUiSignals = false,
+            hasStrongDocumentSignals = false,
+            hasGameSignals = false,
+            reasoning = reasoning
+        )
+
+        assertTrue(primaryScores.getValue("일러스트") > primaryScores.getValue("사람"))
+        assertTrue(secondaryScores.getValue("배경 중심") > secondaryScores.getValue("캐릭터 중심"))
+        assertTrue(reasoning.any { it.contains("배경 중심") })
+    }
+
+    @Test
+    fun applyDominanceHeuristics_keepsCharacterFocusWhenFaceIsLargeInArtwork() {
+        val primaryScores = mutableMapOf(
+            "일러스트" to 0.82f,
+            "애니 관련" to 0.74f,
+            "사람" to 0.51f
+        )
+        val secondaryScores = mutableMapOf(
+            "캐릭터 중심" to 0.64f,
+            "배경 중심" to 0.16f
+        )
+        val reasoning = mutableListOf<String>()
+
+        applyDominanceHeuristics(
+            primaryScores = primaryScores,
+            secondaryScores = secondaryScores,
+            auxiliary = MlKitAuxiliaryResult(
+                faceCount = 1,
+                centeredFaceScore = 0.83f,
+                maxFaceAreaRatio = 0.12f,
+                maxFaceCenteredness = 0.79f,
+                recognizedText = "",
+                textLength = 0,
+                textLineCount = 0,
+                uiKeywordHits = emptyList(),
+                receiptKeywordHits = emptyList(),
+                auxiliaryTags = listOf(ScoredSignal("fictional character", 0.48f)),
+                reasoning = emptyList()
+            ),
+            searchableText = "anime character portrait key visual",
+            semantic = SemanticInferenceResult(
+                primaryScores = mapOf("애니 관련" to 0.91f, "일러스트" to 0.42f),
+                secondaryScores = mapOf("캐릭터 중심" to 0.75f, "애니 이미지" to 0.4f),
+                classifierTags = listOf(ScoredSignal("fictional character", 0.59f)),
+                prototypeTags = listOf(ScoredSignal("애니 관련", 0.62f)),
+                reasoning = emptyList(),
+                reducedMode = false
+            ),
+            hasStrongUiSignals = false,
+            hasStrongDocumentSignals = false,
+            hasGameSignals = false,
+            reasoning = reasoning
+        )
+
+        assertTrue(secondaryScores.getValue("캐릭터 중심") > secondaryScores.getValue("배경 중심"))
+    }
+
+    @Test
+    fun robustAggregateScore_downweightsSingleOutlierFrame() {
+        val outlierDominated = aggregateFrameScores(
+            listOf(
+                mapOf("사람" to 1.08f),
+                emptyMap(),
+                emptyMap()
+            )
+        )
+        val stableSignal = aggregateFrameScores(
+            listOf(
+                mapOf("풍경" to 0.74f),
+                mapOf("풍경" to 0.68f),
+                emptyMap()
+            )
+        )
+
+        assertTrue(outlierDominated.getValue("사람") < 0.25f)
+        assertTrue(stableSignal.getValue("풍경") > 0.45f)
+    }
 }

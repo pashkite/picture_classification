@@ -54,4 +54,17 @@ class BasicSuggestionClassificationEngineTest {
         assertEquals("애니 관련", suggestion.level1)
         assertEquals("애니 이미지", suggestion.level2)
     }
+
+    @Test
+    fun suggest_usesPersonFocusForRealPeopleInsteadOfCharacterFocus() {
+        val suggestion = BasicSuggestionClassifier.suggest(
+            displayName = "family_portrait.jpg",
+            relativePath = "DCIM/People/",
+            mimeType = "image/jpeg",
+            mediaType = MediaType.IMAGE
+        )
+
+        assertEquals("사람", suggestion.level1)
+        assertEquals("인물 중심", suggestion.level2)
+    }
 }

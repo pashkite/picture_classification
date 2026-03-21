@@ -171,9 +171,45 @@
       "displayName": "캐릭터 중심",
       "level1": "애니 관련",
       "level2": "캐릭터 중심",
-      "classifierKeywords": ["person", "portrait", "fictional character", "face"],
+      "classifierKeywords": ["fictional character", "cartoon", "comic book", "animation"],
       "pathKeywords": ["portrait", "character", "캐릭터"],
-      "prototypeId": "person"
+      "prototypeId": "anime"
+    },
+    {
+      "id": "illustration_background",
+      "displayName": "배경 중심",
+      "level1": "일러스트",
+      "level2": "배경 중심",
+      "classifierKeywords": ["illustration", "painting", "art", "landscape", "seashore", "mountain", "palace", "forest", "sky"],
+      "pathKeywords": ["background", "scenery", "wallpaper", "landscape", "배경"],
+      "prototypeId": "illustration"
+    },
+    {
+      "id": "anime_background",
+      "displayName": "배경 중심",
+      "level1": "애니 관련",
+      "level2": "배경 중심",
+      "classifierKeywords": ["animation", "cartoon", "landscape", "seashore", "mountain", "temple", "streetcar"],
+      "pathKeywords": ["anime background", "scenery", "wallpaper", "배경"],
+      "prototypeId": "anime"
+    },
+    {
+      "id": "game_background",
+      "displayName": "배경 중심",
+      "level1": "게임 관련",
+      "level2": "배경 중심",
+      "classifierKeywords": ["landscape", "valley", "mountain", "castle", "stage", "forest"],
+      "pathKeywords": ["background", "map", "field", "landscape", "배경"],
+      "prototypeId": "game"
+    },
+    {
+      "id": "drawing_background",
+      "displayName": "배경 중심",
+      "level1": "그림",
+      "level2": "배경 중심",
+      "classifierKeywords": ["drawing", "sketch", "landscape", "house", "bridge"],
+      "pathKeywords": ["background", "landscape", "scenery", "배경"],
+      "prototypeId": "drawing"
     },
     {
       "id": "ui_focus",

@@ -1081,10 +1081,19 @@ private fun ClassificationDebugCard(debugInfo: ClassificationDebugInfo?) {
                     if (debugInfo.reducedMode) {
                         append(" · 축소 모드")
                     }
+                    if (debugInfo.fallbackUsed) {
+                        append(" · fallback 사용")
+                    }
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (debugInfo.usedEngines.isNotEmpty()) {
+                Text(
+                    text = "사용 엔진: ${debugInfo.usedEngines.joinToString()}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             if (debugInfo.finalScores.isNotEmpty()) {
                 Text(
                     text = "최종 점수: ${debugInfo.finalScores.take(5).joinToString { "${it.label}:${"%.2f".format(it.score)}" }}",
@@ -1109,7 +1118,13 @@ private fun ClassificationDebugCard(debugInfo: ClassificationDebugInfo?) {
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = model.displayName,
+                            text = buildString {
+                                append(model.displayName)
+                                append(" · ")
+                                append(if (model.loaded) "로드됨" else "미로드")
+                                append(" / ")
+                                append(if (model.invoked) "실행됨" else "미실행")
+                            },
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -1126,12 +1141,72 @@ private fun ClassificationDebugCard(debugInfo: ClassificationDebugInfo?) {
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                        if (model.notes.isNotEmpty()) {
+                            Text(
+                                text = model.notes.take(3).joinToString(separator = "\n"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+            if (debugInfo.frameSummaries.isNotEmpty()) {
+                Text(
+                    text = "대표 프레임 요약",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                debugInfo.frameSummaries.take(3).forEach { frame ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = buildString {
+                                    append(frame.frameLabel)
+                                    frame.timestampMs?.let {
+                                        append(" · ")
+                                        append(it)
+                                        append("ms")
+                                    }
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (frame.summary.isNotBlank()) {
+                                Text(
+                                    text = frame.summary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            if (frame.tags.isNotEmpty()) {
+                                Text(
+                                    text = frame.tags.take(6).joinToString { "${it.label}:${"%.2f".format(it.score)}" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (frame.notes.isNotEmpty()) {
+                                Text(
+                                    text = frame.notes.take(3).joinToString(separator = "\n"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }
             if (debugInfo.reasoning.isNotEmpty()) {
                 Text(
-                    text = debugInfo.reasoning.take(5).joinToString(separator = "\n"),
+                    text = debugInfo.reasoning.take(8).joinToString(separator = "\n"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

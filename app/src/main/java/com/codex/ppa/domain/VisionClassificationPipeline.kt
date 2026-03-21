@@ -68,19 +68,30 @@ internal data class SemanticInferenceResult(
     val classifierTags: List<ScoredSignal>,
     val prototypeTags: List<ScoredSignal>,
     val reasoning: List<String>,
-    val reducedMode: Boolean
+    val reducedMode: Boolean,
+    val classifierLoaded: Boolean = false,
+    val classifierInvoked: Boolean = false,
+    val embedderLoaded: Boolean = false,
+    val embedderInvoked: Boolean = false,
+    val frameSummaries: List<FrameDebugInfo> = emptyList()
 )
 
 internal data class MlKitAuxiliaryResult(
     val faceCount: Int,
     val centeredFaceScore: Float,
+    val maxFaceAreaRatio: Float = 0f,
+    val maxFaceCenteredness: Float = 0f,
     val recognizedText: String,
     val textLength: Int,
     val textLineCount: Int,
     val uiKeywordHits: List<String>,
     val receiptKeywordHits: List<String>,
     val auxiliaryTags: List<ScoredSignal>,
-    val reasoning: List<String>
+    val reasoning: List<String>,
+    val faceInvoked: Boolean = false,
+    val textInvoked: Boolean = false,
+    val labelInvoked: Boolean = false,
+    val frameSummaries: List<FrameDebugInfo> = emptyList()
 )
 
 internal data class MainClassifierOutput(
@@ -502,59 +513,78 @@ internal class MediaPipeSemanticInferenceEngine(
         modelProvider.ensureInitialized()
         val classifier = modelProvider.mainImageClassifier()
         val embedder = modelProvider.imageEmbedderOrNull()
+        val classifierLoaded = classifier.isLoaded()
+        val embedderLoaded = embedder != null
 
-        if (!classifier.isLoaded() && embedder == null) {
+        if (!classifierLoaded && !embedderLoaded) {
             return SemanticInferenceResult(
                 primaryScores = emptyMap(),
                 secondaryScores = emptyMap(),
                 classifierTags = emptyList(),
                 prototypeTags = emptyList(),
                 reasoning = listOf("MediaPipe 모델을 로드하지 못해 의미 분류를 건너뛰었다."),
-                reducedMode = true
+                reducedMode = true,
+                classifierLoaded = false,
+                embedderLoaded = false
             )
         }
 
-        val classifierAccumulator = mutableMapOf<String, Float>()
-        val primaryAccumulator = mutableMapOf<String, Float>()
-        val secondaryAccumulator = mutableMapOf<String, Float>()
-        val prototypeAccumulator = mutableMapOf<String, Float>()
+        val classifierFrameScores = mutableListOf<Map<String, Float>>()
+        val primaryFrameScores = mutableListOf<Map<String, Float>>()
+        val secondaryFrameScores = mutableListOf<Map<String, Float>>()
+        val prototypeFrameScores = mutableListOf<Map<String, Float>>()
         val reasoning = mutableListOf<String>()
         val classifierRuntimeLabels = linkedSetOf<String>()
+        val frameSummaries = mutableListOf<FrameDebugInfo>()
+        var classifierInvoked = false
+        var embedderInvoked = false
 
         if (embedder != null) {
             ensurePrototypeVectors(embedder)
+        } else {
+            reasoning += "ImageEmbedder를 로드하지 못해 스타일/프로토타입 유사도 보강을 건너뛰었다."
+        }
+        if (!classifierLoaded) {
+            reasoning += "주 분류기를 로드하지 못해 Lite4 classifier 태그 없이 embedder/ML Kit 보조 신호에 더 의존한다."
         }
 
         request.frames.forEach { frame ->
             val cacheKey = buildFrameCacheKey(request.mediaItem, frame)
             val styleMetrics = StyleMetrics.from(frame.bitmap)
+            val framePrimaryAccumulator = mutableMapOf<String, Float>()
+            val frameSecondaryAccumulator = mutableMapOf<String, Float>()
+            val frameClassifierAccumulator = mutableMapOf<String, Float>()
+            val framePrototypeAccumulator = mutableMapOf<String, Float>()
+            val frameNotes = mutableListOf<String>()
 
             val classifierOutput = cachedClassifierTags(cacheKey) {
                 classifier.classify(frame.bitmap)
             }
+            classifierInvoked = classifierInvoked || classifierLoaded
             val classifierTags = classifierOutput?.tags.orEmpty()
             classifierOutput?.backendLabel
                 ?.takeIf { classifierTags.isNotEmpty() }
                 ?.let(classifierRuntimeLabels::add)
 
             classifierTags.forEach { tag ->
-                classifierAccumulator.merge(tag.label.lowercase(), tag.score, Float::plus)
+                frameClassifierAccumulator.merge(tag.label.lowercase(), tag.score, Float::plus)
             }
 
             applyProfileKeywordScores(
                 profiles = taxonomy.primaryCategories,
                 classifierTags = classifierTags,
                 styleMetrics = styleMetrics,
-                accumulator = primaryAccumulator
+                accumulator = framePrimaryAccumulator
             )
             applyProfileKeywordScores(
                 profiles = taxonomy.secondaryCategories,
                 classifierTags = classifierTags,
                 styleMetrics = styleMetrics,
-                accumulator = secondaryAccumulator
+                accumulator = frameSecondaryAccumulator
             )
 
             val imageEmbedding = if (embedder != null) {
+                embedderInvoked = true
                 cachedEmbedding(cacheKey) {
                     val mpImage = BitmapImageBuilder(frame.bitmap).build()
                     embedder.embed(mpImage)
@@ -575,11 +605,11 @@ internal class MediaPipeSemanticInferenceEngine(
                 prototypeScores
                     .filterValues { it.isFinite() }
                     .forEach { (prototypeId, score) ->
-                        prototypeAccumulator.merge(prototypeId, score, Float::plus)
+                        framePrototypeAccumulator[prototypeId] = score
                         taxonomy.primaryCategories
                             .filter { it.prototypeId == prototypeId }
                             .forEach { profile ->
-                                primaryAccumulator.merge(
+                                framePrimaryAccumulator.merge(
                                     profile.level1,
                                     ((score + 1f) / 2f).coerceAtLeast(0f) * 0.85f,
                                     Float::plus
@@ -588,7 +618,7 @@ internal class MediaPipeSemanticInferenceEngine(
                         taxonomy.secondaryCategories
                             .filter { it.prototypeId == prototypeId }
                             .forEach { profile ->
-                                secondaryAccumulator.merge(
+                                frameSecondaryAccumulator.merge(
                                     profile.level2,
                                     ((score + 1f) / 2f).coerceAtLeast(0f) * 0.6f,
                                     Float::plus
@@ -596,23 +626,65 @@ internal class MediaPipeSemanticInferenceEngine(
                             }
                     }
             }
+
+            if (styleMetrics.highSaturationAnimeLike) {
+                frameNotes += "고채도/선명한 일러스트풍 스타일 신호"
+            }
+            if (styleMetrics.rectilinearUiLike) {
+                frameNotes += "직선/UI 패턴이 두드러짐"
+            }
+            if (styleMetrics.brightPageLike) {
+                frameNotes += "밝은 문서/페이지형 배경"
+            }
+
+            val framePrototypeTags = framePrototypeAccumulator.entries
+                .sortedByDescending { it.value }
+                .take(3)
+                .map { ScoredSignal(prototypeDisplayName(it.key), it.value) }
+
+            val frameTagSummary = buildList {
+                classifierOutput?.backendLabel?.takeIf { classifierTags.isNotEmpty() }?.let { backend ->
+                    add("분류기:$backend")
+                }
+                if (classifierTags.isNotEmpty()) {
+                    add("Lite4 ${classifierTags.take(3).joinToString { "${it.label}:${formatScore(it.score)}" }}")
+                }
+                if (framePrototypeTags.isNotEmpty()) {
+                    add("임베더 ${framePrototypeTags.take(2).joinToString { "${it.label}:${formatScore(it.score)}" }}")
+                }
+            }.joinToString(" · ")
+
+            frameSummaries += FrameDebugInfo(
+                frameLabel = frame.label,
+                timestampMs = frame.timestampMs,
+                summary = frameTagSummary,
+                tags = (
+                    classifierTags.take(4) +
+                        framePrototypeTags.take(2).map { signal ->
+                            ScoredSignal("임베딩:${signal.label}", signal.score)
+                        }
+                    ).take(6),
+                notes = frameNotes
+            )
+
+            classifierFrameScores += frameClassifierAccumulator.toMap()
+            primaryFrameScores += framePrimaryAccumulator.toMap()
+            secondaryFrameScores += frameSecondaryAccumulator.toMap()
+            prototypeFrameScores += framePrototypeAccumulator.toMap()
         }
 
-        val frameCount = max(request.frames.size, 1)
-        val normalizedPrimary = primaryAccumulator.mapValues { (_, score) -> score / frameCount }
-        val normalizedSecondary = secondaryAccumulator.mapValues { (_, score) -> score / frameCount }
-        val normalizedClassifier = classifierAccumulator
-            .mapValues { (_, score) -> score / frameCount }
+        val normalizedPrimary = aggregateFrameScores(primaryFrameScores)
+        val normalizedSecondary = aggregateFrameScores(secondaryFrameScores)
+        val normalizedClassifier = aggregateFrameScores(classifierFrameScores)
             .entries
             .sortedByDescending { it.value }
             .take(8)
             .map { ScoredSignal(it.key, it.value) }
-        val normalizedPrototype = prototypeAccumulator
-            .mapValues { (_, score) -> score / frameCount }
+        val normalizedPrototype = aggregateFrameScores(prototypeFrameScores)
             .entries
             .sortedByDescending { it.value }
             .take(8)
-            .map { ScoredSignal(it.key, it.value) }
+            .map { ScoredSignal(prototypeDisplayName(it.key), it.value) }
 
         if (classifierRuntimeLabels.isNotEmpty()) {
             reasoning += "Lite4 분류기 백엔드: ${classifierRuntimeLabels.joinToString()}"
@@ -630,7 +702,12 @@ internal class MediaPipeSemanticInferenceEngine(
             classifierTags = normalizedClassifier,
             prototypeTags = normalizedPrototype,
             reasoning = reasoning,
-            reducedMode = false
+            reducedMode = false,
+            classifierLoaded = classifierLoaded,
+            classifierInvoked = classifierInvoked,
+            embedderLoaded = embedderLoaded,
+            embedderInvoked = embedderInvoked,
+            frameSummaries = frameSummaries
         )
     }
 
@@ -743,6 +820,12 @@ internal class MediaPipeSemanticInferenceEngine(
             append(mediaItem.dateModifiedEpochSeconds)
         }
     }
+
+    private fun prototypeDisplayName(prototypeId: String): String {
+        return taxonomy.primaryCategories.firstOrNull { it.prototypeId == prototypeId }?.displayName
+            ?: taxonomy.secondaryCategories.firstOrNull { it.prototypeId == prototypeId }?.displayName
+            ?: prototypeId
+    }
 }
 
 internal class MlKitAuxiliaryInferenceEngine(
@@ -802,14 +885,19 @@ internal class MlKitAuxiliaryInferenceEngine(
     }
 
     override suspend fun infer(request: MediaInferenceRequest): MlKitAuxiliaryResult {
-        val selectedFrames = if (request.frames.size <= 2) {
-            request.frames
-        } else {
-            listOf(request.frames.first(), request.frames[request.frames.lastIndex / 2])
+        val selectedFrames = when {
+            request.frames.size <= 3 -> request.frames
+            else -> listOf(
+                request.frames.first(),
+                request.frames[request.frames.lastIndex / 2],
+                request.frames.last()
+            ).distinctBy { it.label to it.timestampMs }
         }
 
         var maxFaceCount = 0
         var centeredFaceScore = 0f
+        var maxFaceAreaRatio = 0f
+        var maxFaceCenteredness = 0f
         var longestText = ""
         var textLength = 0
         var textLineCount = 0
@@ -817,14 +905,26 @@ internal class MlKitAuxiliaryInferenceEngine(
         val receiptKeywordHits = linkedSetOf<String>()
         val labelAccumulator = mutableMapOf<String, Float>()
         val reasoning = mutableListOf<String>()
+        val frameSummaries = mutableListOf<FrameDebugInfo>()
+        val faceInvoked = selectedFrames.isNotEmpty()
+        val textInvoked = selectedFrames.isNotEmpty()
+        val labelInvoked = selectedFrames.isNotEmpty()
 
         selectedFrames.forEach { frame ->
             val image = InputImage.fromBitmap(frame.bitmap, 0)
+            var frameFaceCount = 0
+            var frameMaxFaceArea = 0f
+            var frameMaxCentered = 0f
+            var frameTextLength = 0
+            var frameTextLines = 0
+            val frameKeywordNotes = mutableListOf<String>()
+            val frameLabelAccumulator = mutableMapOf<String, Float>()
 
             runCatching {
                 faceDetector.process(image).awaitResult()
             }.getOrDefault(emptyList()).also { faces ->
                 maxFaceCount = max(maxFaceCount, faces.size)
+                frameFaceCount = faces.size
                 val frameCentered = faces.maxOfOrNull { face ->
                     val bounds = face.boundingBox
                     val centerX = bounds.exactCenterX() / frame.bitmap.width.toFloat()
@@ -832,6 +932,10 @@ internal class MlKitAuxiliaryInferenceEngine(
                     val areaRatio = (bounds.width() * bounds.height()).toFloat() /
                         (frame.bitmap.width * frame.bitmap.height).toFloat()
                     val centeredness = 1f - ((abs(centerX - 0.5f) + abs(centerY - 0.5f)) / 1f)
+                    frameMaxFaceArea = max(frameMaxFaceArea, areaRatio)
+                    frameMaxCentered = max(frameMaxCentered, centeredness.coerceAtLeast(0f))
+                    maxFaceAreaRatio = max(maxFaceAreaRatio, areaRatio)
+                    maxFaceCenteredness = max(maxFaceCenteredness, centeredness.coerceAtLeast(0f))
                     (areaRatio * 1.8f + centeredness).coerceAtLeast(0f)
                 } ?: 0f
                 centeredFaceScore = max(centeredFaceScore, frameCentered)
@@ -841,20 +945,67 @@ internal class MlKitAuxiliaryInferenceEngine(
                 textRecognizer.process(image).awaitResult()
             }.getOrNull()?.let { textResult ->
                 val fullText = textResult.text.orEmpty().trim()
+                frameTextLength = fullText.length
+                frameTextLines = textResult.textBlocks.sumOf { block -> block.lines.size }
                 if (fullText.length > textLength) {
                     longestText = fullText
                     textLength = fullText.length
                 }
-                textLineCount = max(textLineCount, textResult.textBlocks.sumOf { block -> block.lines.size })
-                uiKeywordHits += ScreenTextKeywords.filter { keyword -> fullText.contains(keyword, ignoreCase = true) }
-                receiptKeywordHits += ReceiptTextKeywords.filter { keyword -> fullText.contains(keyword, ignoreCase = true) }
+                textLineCount = max(textLineCount, frameTextLines)
+                val frameUiKeywords = ScreenTextKeywords.filter { keyword -> fullText.contains(keyword, ignoreCase = true) }
+                val frameReceiptKeywords = ReceiptTextKeywords.filter { keyword -> fullText.contains(keyword, ignoreCase = true) }
+                uiKeywordHits += frameUiKeywords
+                receiptKeywordHits += frameReceiptKeywords
+                if (frameUiKeywords.isNotEmpty()) {
+                    frameKeywordNotes += "UI:${frameUiKeywords.joinToString()}"
+                }
+                if (frameReceiptKeywords.isNotEmpty()) {
+                    frameKeywordNotes += "영수증:${frameReceiptKeywords.joinToString()}"
+                }
             }
 
             runCatching {
                 labeler.process(image).awaitResult()
             }.getOrDefault(emptyList()).forEach { label ->
                 labelAccumulator.merge(label.text.lowercase(), label.confidence, Float::plus)
+                frameLabelAccumulator.merge(label.text.lowercase(), label.confidence, Float::plus)
             }
+
+            frameSummaries += FrameDebugInfo(
+                frameLabel = frame.label,
+                timestampMs = frame.timestampMs,
+                summary = buildString {
+                    append("얼굴 ")
+                    append(frameFaceCount)
+                    append("개")
+                    if (frameTextLength > 0) {
+                        append(" · OCR ")
+                        append(frameTextLength)
+                        append("자/")
+                        append(frameTextLines)
+                        append("줄")
+                    }
+                    if (frameLabelAccumulator.isNotEmpty()) {
+                        append(" · ML Kit 라벨 ")
+                        append(
+                            frameLabelAccumulator.entries
+                                .sortedByDescending { it.value }
+                                .take(2)
+                                .joinToString { "${it.key}:${formatScore(it.value)}" }
+                        )
+                    }
+                },
+                tags = frameLabelAccumulator.entries
+                    .sortedByDescending { it.value }
+                    .take(4)
+                    .map { ScoredSignal(it.key, it.value) },
+                notes = buildList {
+                    if (frameMaxFaceArea > 0f) {
+                        add("최대 얼굴 비율 ${formatScore(frameMaxFaceArea)} / 중앙도 ${formatScore(frameMaxCentered)}")
+                    }
+                    addAll(frameKeywordNotes)
+                }
+            )
         }
 
         if (maxFaceCount > 0) {
@@ -867,6 +1018,8 @@ internal class MlKitAuxiliaryInferenceEngine(
         return MlKitAuxiliaryResult(
             faceCount = maxFaceCount,
             centeredFaceScore = centeredFaceScore,
+            maxFaceAreaRatio = maxFaceAreaRatio,
+            maxFaceCenteredness = maxFaceCenteredness,
             recognizedText = longestText.take(500),
             textLength = textLength,
             textLineCount = textLineCount,
@@ -877,7 +1030,11 @@ internal class MlKitAuxiliaryInferenceEngine(
                 .sortedByDescending { it.value }
                 .take(8)
                 .map { ScoredSignal(it.key, it.value / max(selectedFrames.size, 1)) },
-            reasoning = reasoning
+            reasoning = reasoning,
+            faceInvoked = faceInvoked,
+            textInvoked = textInvoked,
+            labelInvoked = labelInvoked,
+            frameSummaries = frameSummaries
         )
     }
 }
@@ -969,6 +1126,12 @@ internal class ClassificationPipeline(
                 secondaryScores.merge(profile.level2, textMatches, Float::plus)
             }
         }
+        applyAuxiliaryLabelScores(
+            primaryScores = primaryScores,
+            secondaryScores = secondaryScores,
+            auxiliary = auxiliary,
+            reasoning = reasoning
+        )
 
         val hasStrongUiSignals = auxiliary.uiKeywordHits.size >= 2 ||
             searchableText.containsAny("screenshot", "screen_shot", "screen-shot", "screenrecord", "screen_record", "캡처")
@@ -990,12 +1153,40 @@ internal class ClassificationPipeline(
         ) || (semantic?.primaryScores?.get("게임 관련") ?: 0f) >= 0.35f
 
         if (auxiliary.faceCount > 0 && !hasStrongUiSignals && !hasStrongDocumentSignals) {
-            primaryScores.merge("사람", 0.55f + auxiliary.faceCount * 0.12f, Float::plus)
+            when {
+                auxiliary.maxFaceAreaRatio >= StrongFaceAreaRatio || auxiliary.centeredFaceScore >= StrongCenteredFaceScore -> {
+                    primaryScores.merge(
+                        "사람",
+                        0.45f + auxiliary.faceCount * 0.1f + auxiliary.maxFaceAreaRatio * 1.25f,
+                        Float::plus
+                    )
+                    reasoning += "얼굴이 충분히 크거나 중앙에 있어 사람 중심 가중치를 올렸다."
+                }
+                auxiliary.maxFaceAreaRatio >= MediumFaceAreaRatio || auxiliary.centeredFaceScore >= MediumCenteredFaceScore -> {
+                    primaryScores.merge(
+                        "사람",
+                        0.2f + auxiliary.maxFaceAreaRatio * 0.9f,
+                        Float::plus
+                    )
+                    reasoning += "얼굴이 보이지만 비중이 제한적이라 사람 가중치를 약하게만 더했다."
+                }
+                else -> reasoning += "작거나 주변부 얼굴만 보여 사람 중심 가중치를 크게 올리지 않았다."
+            }
         } else if (auxiliary.faceCount > 0) {
             reasoning += "문서/UI 신호가 강해 얼굴 기반 사람 가중치를 억제했다."
         }
-        if (auxiliary.centeredFaceScore >= 0.55f && !hasStrongUiSignals && !hasStrongDocumentSignals) {
-            primaryScores.merge("셀카", 0.75f + auxiliary.centeredFaceScore * 0.3f, Float::plus)
+        if (
+            auxiliary.faceCount > 0 &&
+            auxiliary.maxFaceAreaRatio >= StrongFaceAreaRatio &&
+            auxiliary.centeredFaceScore >= StrongCenteredFaceScore &&
+            !hasStrongUiSignals &&
+            !hasStrongDocumentSignals
+        ) {
+            primaryScores.merge(
+                "셀카",
+                0.48f + auxiliary.centeredFaceScore * 0.24f + auxiliary.maxFaceAreaRatio * 1.2f,
+                Float::plus
+            )
         }
         if (auxiliary.textLength >= 30) {
             primaryScores.merge("문서", 0.45f, Float::plus)
@@ -1042,7 +1233,7 @@ internal class ClassificationPipeline(
             reasoning += "파일명/경로 기반 fallback prior를 ${label}에 더했다."
         }
         fallback?.labels?.level2?.takeIf { it.isNotBlank() }?.let { label ->
-            secondaryScores.merge(label, 0.18f, Float::plus)
+            secondaryScores.merge(label, 0.14f, Float::plus)
         }
 
         val sortedPrimary = primaryScores.entries
@@ -1131,29 +1322,97 @@ internal class ClassificationPipeline(
         val debugInfo = ClassificationDebugInfo(
             confidence = confidence,
             reducedMode = semantic?.reducedMode == true,
+            fallbackUsed = semantic?.reducedMode == true,
+            usedEngines = buildList {
+                if (semantic?.classifierInvoked == true) add("main-image-classifier")
+                if (semantic?.embedderInvoked == true) add("mediapipe-image-embedder")
+                if (auxiliary.faceInvoked) add("mlkit-face-detection")
+                if (auxiliary.textInvoked) add("mlkit-text-recognition")
+                if (auxiliary.labelInvoked) add("mlkit-image-labeling")
+                if (semantic?.reducedMode == true) add("rule-based-fallback")
+            },
             reasoning = reasoning,
             finalScores = sortedPrimary.take(6),
             seriesCandidates = seriesCandidates.take(5),
+            frameSummaries = mergeFrameDebugSummaries(
+                semanticFrames = semantic?.frameSummaries.orEmpty(),
+                mlKitFrames = auxiliary.frameSummaries
+            ),
             modelOutputs = buildList {
                 semantic?.let {
                     add(
                         ModelDebugInfo(
-                            modelId = "mediapipe-semantic",
-                            displayName = "MediaPipe 의미 분류",
-                            summary = if (it.reducedMode) {
-                                "MediaPipe 모델을 못 불러와 축소 모드로 떨어졌다."
+                            modelId = "main-image-classifier",
+                            displayName = "Main Image Classifier (EfficientNet-Lite4)",
+                            loaded = it.classifierLoaded,
+                            invoked = it.classifierInvoked,
+                            summary = if (!it.classifierLoaded) {
+                                "Lite4 주 분류기를 로드하지 못했다."
                             } else {
-                                "EfficientNet-Lite4 FP32 주 분류기와 ImageEmbedder 결과를 합쳤다."
+                                "대표 프레임별 Lite4 top-k 태그를 집계했다."
                             },
-                            tags = (it.classifierTags + it.prototypeTags).take(10)
+                            tags = it.classifierTags.take(8),
+                            notes = listOfNotNull(
+                                it.reasoning.firstOrNull { reason -> reason.contains("Lite4 분류기 백엔드") }
+                            )
+                        )
+                    )
+                    add(
+                        ModelDebugInfo(
+                            modelId = "mediapipe-image-embedder",
+                            displayName = "MediaPipe ImageEmbedder",
+                            loaded = it.embedderLoaded,
+                            invoked = it.embedderInvoked,
+                            summary = if (!it.embedderLoaded) {
+                                "임베더를 로드하지 못해 프로토타입 유사도 보강을 건너뛰었다."
+                            } else {
+                                "로컬 프로토타입과의 유사도를 이용해 스타일/장르 점수를 보강했다."
+                            },
+                            tags = it.prototypeTags.take(8)
                         )
                     )
                 }
                 add(
                     ModelDebugInfo(
-                        modelId = "mlkit-auxiliary",
-                        displayName = "ML Kit 보조 신호",
-                        summary = "얼굴 ${auxiliary.faceCount}개, OCR ${auxiliary.textLength}자, UI 힌트 ${auxiliary.uiKeywordHits.size}개",
+                        modelId = "mlkit-face",
+                        displayName = "ML Kit Face Detection",
+                        loaded = true,
+                        invoked = auxiliary.faceInvoked,
+                        summary = "얼굴 ${auxiliary.faceCount}개, 최대 얼굴 비율 ${formatScore(auxiliary.maxFaceAreaRatio)}, 중앙도 ${formatScore(auxiliary.maxFaceCenteredness)}",
+                        notes = buildList {
+                            if (auxiliary.faceCount == 0) {
+                                add("얼굴이 검출되지 않았다.")
+                            }
+                            if (auxiliary.faceCount > 0 && auxiliary.maxFaceAreaRatio < MediumFaceAreaRatio) {
+                                add("작은 얼굴만 보여 사람 중심으로 과도하게 밀지 않도록 제한했다.")
+                            }
+                        }
+                    )
+                )
+                add(
+                    ModelDebugInfo(
+                        modelId = "mlkit-text",
+                        displayName = "ML Kit Text Recognition",
+                        loaded = true,
+                        invoked = auxiliary.textInvoked,
+                        summary = "OCR ${auxiliary.textLength}자 / ${auxiliary.textLineCount}줄, UI 힌트 ${auxiliary.uiKeywordHits.size}개, 영수증 힌트 ${auxiliary.receiptKeywordHits.size}개",
+                        tags = (auxiliary.uiKeywordHits + auxiliary.receiptKeywordHits)
+                            .distinct()
+                            .take(6)
+                            .map { ScoredSignal(it, 1f) },
+                        notes = auxiliary.recognizedText
+                            .takeIf { it.isNotBlank() }
+                            ?.let { listOf(it.take(120)) }
+                            .orEmpty()
+                    )
+                )
+                add(
+                    ModelDebugInfo(
+                        modelId = "mlkit-label",
+                        displayName = "ML Kit Image Labeling",
+                        loaded = true,
+                        invoked = auxiliary.labelInvoked,
+                        summary = "일반 보조 태그를 약한 prior로만 반영했다.",
                         tags = auxiliary.auxiliaryTags.take(8)
                     )
                 )
@@ -1162,6 +1421,8 @@ internal class ClassificationPipeline(
                         ModelDebugInfo(
                             modelId = "rule-based-fallback",
                             displayName = "규칙 기반 fallback",
+                            loaded = true,
+                            invoked = true,
                             summary = "추가 모델 실패나 낮은 신뢰도 상황에서 약한 prior로만 사용했다.",
                             tags = listOf(
                                 ScoredSignal(it.labels.level1.ifBlank { "기타" }, it.confidence)
@@ -1194,6 +1455,7 @@ internal class ClassificationPipeline(
             "애니 관련", "게임 관련", "일러스트", "그림" -> taxonomy.secondaryCategories
                 .filter { it.level1 == level1 }
                 .map { it.level2 }
+                .distinct()
             "스크린샷" -> listOf("UI 중심", "로고/타이틀 화면", "대사/자막 중심")
             else -> emptyList()
         }
@@ -1229,6 +1491,64 @@ internal class ClassificationPipeline(
             auxiliary.uiKeywordHits.joinToString(" "),
             auxiliary.receiptKeywordHits.joinToString(" ")
         ).joinToString(separator = " ").lowercase()
+    }
+
+    private fun applyAuxiliaryLabelScores(
+        primaryScores: MutableMap<String, Float>,
+        secondaryScores: MutableMap<String, Float>,
+        auxiliary: MlKitAuxiliaryResult,
+        reasoning: MutableList<String>
+    ) {
+        val strongAuxiliaryTags = auxiliary.auxiliaryTags
+            .filter { it.score >= AuxiliaryLabelMinimumScore }
+            .take(6)
+        if (strongAuxiliaryTags.isEmpty()) {
+            return
+        }
+
+        taxonomy.primaryCategories.forEach { profile ->
+            if (profile.level1 in setOf("사람", "셀카") &&
+                auxiliary.faceCount == 0 &&
+                auxiliary.maxFaceAreaRatio < MediumFaceAreaRatio
+            ) {
+                return@forEach
+            }
+
+            val score = strongAuxiliaryTags.sumOf { tag ->
+                if (profile.classifierKeywords.any { keyword -> tag.label.contains(keyword, ignoreCase = true) }) {
+                    (tag.score * AuxiliaryPrimaryWeight).toDouble()
+                } else {
+                    0.0
+                }
+            }.toFloat()
+
+            if (score > 0f) {
+                primaryScores.merge(profile.level1, score, Float::plus)
+            }
+        }
+
+        taxonomy.secondaryCategories.forEach { profile ->
+            if (profile.level2 == "캐릭터 중심" &&
+                auxiliary.faceCount == 0 &&
+                auxiliary.maxFaceAreaRatio < MediumFaceAreaRatio
+            ) {
+                return@forEach
+            }
+
+            val score = strongAuxiliaryTags.sumOf { tag ->
+                if (profile.classifierKeywords.any { keyword -> tag.label.contains(keyword, ignoreCase = true) }) {
+                    (tag.score * AuxiliarySecondaryWeight).toDouble()
+                } else {
+                    0.0
+                }
+            }.toFloat()
+
+            if (score > 0f) {
+                secondaryScores.merge(profile.level2, score, Float::plus)
+            }
+        }
+
+        reasoning += "ML Kit 이미지 라벨 상위 태그를 약한 보조 prior로 반영했다: ${strongAuxiliaryTags.joinToString { "${it.label}:${formatScore(it.score)}" }}"
     }
 }
 
@@ -1279,6 +1599,41 @@ internal fun applyDominanceHeuristics(
     if ((semantic?.primaryScores?.get("문서") ?: 0f) >= 0.6f && auxiliary.textLength >= 60) {
         primaryScores.merge("문서", 0.55f, Float::plus)
     }
+
+    val artSemanticScore = (semantic?.primaryScores?.get("일러스트") ?: 0f) +
+        (semantic?.primaryScores?.get("애니 관련") ?: 0f) +
+        (semantic?.primaryScores?.get("그림") ?: 0f)
+    val artSecondaryScore = (semantic?.secondaryScores?.get("일반 일러스트") ?: 0f) +
+        (semantic?.secondaryScores?.get("배경 중심") ?: 0f) +
+        (semantic?.secondaryScores?.get("애니 이미지") ?: 0f)
+    val weakFaceSubject = auxiliary.faceCount == 0 ||
+        (auxiliary.maxFaceAreaRatio < MediumFaceAreaRatio &&
+            auxiliary.centeredFaceScore < MediumCenteredFaceScore)
+    val strongCharacterSubject = auxiliary.faceCount > 0 &&
+        (auxiliary.maxFaceAreaRatio >= StrongFaceAreaRatio ||
+            auxiliary.centeredFaceScore >= StrongCenteredFaceScore)
+    val hasBackgroundArtworkSignal = searchableText.containsAny(
+        "background",
+        "scenery",
+        "wallpaper",
+        "landscape",
+        "배경",
+        "풍경"
+    )
+
+    if (!hasStrongUiSignals && !hasStrongDocumentSignals && !hasGameSignals) {
+        if ((artSemanticScore + artSecondaryScore) >= 0.9f && weakFaceSubject) {
+            decreaseScore(primaryScores, "사람", 0.85f)
+            decreaseScore(primaryScores, "셀카", 0.95f)
+            secondaryScores.merge("배경 중심", 0.82f, Float::plus)
+            secondaryScores.merge("일반 일러스트", 0.24f, Float::plus)
+            decreaseScore(secondaryScores, "캐릭터 중심", 0.55f)
+            reasoning += "일러스트/배경 신호가 우세하고 얼굴 비중이 작아 캐릭터 중심 대신 배경 중심을 우선했다."
+        } else if ((artSemanticScore >= 0.7f || hasBackgroundArtworkSignal) && strongCharacterSubject) {
+            secondaryScores.merge("캐릭터 중심", 0.28f, Float::plus)
+            reasoning += "일러스트 계열이지만 얼굴 비중이 충분해 캐릭터 중심 후보를 유지했다."
+        }
+    }
 }
 
 internal fun shouldUseReviewFallback(
@@ -1294,7 +1649,11 @@ internal fun shouldUseReviewFallback(
     if (candidateLevel1 in setOf("문서", "영수증", "스크린샷") && (hasStrongUiSignals || hasStrongDocumentSignals)) {
         return false
     }
-    if (candidateLevel1 in setOf("사람", "셀카") && auxiliary.faceCount > 0 && auxiliary.centeredFaceScore >= 0.45f) {
+    if (candidateLevel1 in setOf("사람", "셀카") &&
+        auxiliary.faceCount > 0 &&
+        auxiliary.centeredFaceScore >= 0.45f &&
+        auxiliary.maxFaceAreaRatio >= MediumFaceAreaRatio
+    ) {
         return false
     }
 
@@ -1663,6 +2022,66 @@ private fun decreaseScore(scores: MutableMap<String, Float>, label: String, delt
     scores[label] = (scores[label] ?: 0f) - delta
 }
 
+internal fun aggregateFrameScores(frameScores: List<Map<String, Float>>): Map<String, Float> {
+    if (frameScores.isEmpty()) {
+        return emptyMap()
+    }
+
+    val labels = frameScores.flatMap { it.keys }.toSet()
+    return labels.associateWith { label ->
+        robustAggregateScore(frameScores.map { scores -> scores[label] ?: 0f })
+    }.filterValues { it > 0.001f && it.isFinite() }
+}
+
+internal fun robustAggregateScore(values: List<Float>): Float {
+    if (values.isEmpty()) {
+        return 0f
+    }
+    if (values.size == 1) {
+        return values.first().coerceAtLeast(0f)
+    }
+    if (values.size == 2) {
+        return values.average().toFloat().coerceAtLeast(0f)
+    }
+
+    val normalizedValues = values.map { it.coerceAtLeast(0f) }.sorted()
+    val median = normalizedValues[normalizedValues.size / 2]
+    val mean = normalizedValues.average().toFloat()
+    return (median * 0.55f + mean * 0.45f).coerceAtLeast(0f)
+}
+
+private fun mergeFrameDebugSummaries(
+    semanticFrames: List<FrameDebugInfo>,
+    mlKitFrames: List<FrameDebugInfo>
+): List<FrameDebugInfo> {
+    if (semanticFrames.isEmpty()) {
+        return mlKitFrames
+    }
+    if (mlKitFrames.isEmpty()) {
+        return semanticFrames
+    }
+
+    val mergedKeys = linkedSetOf<Pair<String, Long?>>()
+    (semanticFrames + mlKitFrames).forEach { frame ->
+        mergedKeys += frame.frameLabel to frame.timestampMs
+    }
+
+    return mergedKeys.map { (frameLabel, timestampMs) ->
+        val semanticFrame = semanticFrames.firstOrNull { it.frameLabel == frameLabel && it.timestampMs == timestampMs }
+        val mlKitFrame = mlKitFrames.firstOrNull { it.frameLabel == frameLabel && it.timestampMs == timestampMs }
+        FrameDebugInfo(
+            frameLabel = frameLabel,
+            timestampMs = timestampMs,
+            summary = listOfNotNull(
+                semanticFrame?.summary?.takeIf { it.isNotBlank() },
+                mlKitFrame?.summary?.takeIf { it.isNotBlank() }
+            ).joinToString(" || "),
+            tags = (semanticFrame?.tags.orEmpty() + mlKitFrame?.tags.orEmpty()).take(8),
+            notes = (semanticFrame?.notes.orEmpty() + mlKitFrame?.notes.orEmpty()).distinct()
+        )
+    }
+}
+
 private fun cosineSimilarity(first: FloatArray, second: FloatArray): Float {
     if (first.isEmpty() || second.isEmpty() || first.size != second.size) {
         return 0f
@@ -1834,6 +2253,13 @@ private const val ConservativeMarginThreshold = 0.12f
 private const val VeryLowTopScoreThreshold = 0.24f
 private const val ConservativeClassifierThreshold = 0.25f
 private const val ConservativePrototypeThreshold = 0.52f
+private const val AuxiliaryLabelMinimumScore = 0.18f
+private const val AuxiliaryPrimaryWeight = 0.14f
+private const val AuxiliarySecondaryWeight = 0.11f
+private const val MediumFaceAreaRatio = 0.04f
+private const val StrongFaceAreaRatio = 0.08f
+private const val MediumCenteredFaceScore = 0.58f
+private const val StrongCenteredFaceScore = 0.74f
 private val ConservativeInterpretationLabels = setOf(
     "사람",
     "셀카",

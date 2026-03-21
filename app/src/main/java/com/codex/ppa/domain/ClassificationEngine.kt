@@ -60,6 +60,8 @@ class BasicSuggestionClassificationEngine : ClassificationEngine {
             debugInfo = ClassificationDebugInfo(
                 confidence = 0.18f,
                 reducedMode = true,
+                fallbackUsed = true,
+                usedEngines = listOf("rule-based-fallback"),
                 reasoning = listOf("추가 비전 모델 또는 ML Kit가 없을 때 파일명·경로·MIME 규칙만 사용"),
                 finalScores = listOf(
                     ScoredSignal(labels.level1.ifBlank { "기타" }, 0.18f)
@@ -68,6 +70,8 @@ class BasicSuggestionClassificationEngine : ClassificationEngine {
                     ModelDebugInfo(
                         modelId = "rule-based-fallback",
                         displayName = "규칙 기반 보조 엔진",
+                        loaded = true,
+                        invoked = true,
                         summary = "파일명·상대 경로·MIME 타입에서 키워드를 찾았다."
                     )
                 )
@@ -120,7 +124,7 @@ object BasicSuggestionClassifier {
             inferredLevel1 == "게임 관련" -> "게임 이미지"
             inferredLevel1 == "일러스트" -> "일반 일러스트"
             inferredLevel1 == "그림" -> "만화풍/웹툰풍"
-            inferredLevel1 in setOf("사람", "셀카") -> "캐릭터 중심"
+            inferredLevel1 in setOf("사람", "셀카") -> "인물 중심"
             else -> ""
         }
 
