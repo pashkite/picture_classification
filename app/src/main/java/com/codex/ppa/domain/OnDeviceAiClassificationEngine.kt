@@ -9,13 +9,14 @@ class OnDeviceAiClassificationEngine(
     private val fallbackEngine: ClassificationEngine = BasicSuggestionClassificationEngine()
 ) : ClassificationEngine {
     override val engineId: String = "hybrid-mlkit-mediapipe"
-    override val displayName: String = "하이브리드 자동분류 (EfficientNet-Lite4 + ImageEmbedder + ML Kit)"
-    override val engineVersion: String = "efficientnet-lite4-fp32 + mediapipe-0.10.29 + mlkit-bundled + rules-v3"
+    override val displayName: String = "하이브리드 자동분류 (EfficientNet-Lite4 + MobileCLIP2-S0 + ImageEmbedder + ML Kit)"
+    override val engineVersion: String = "efficientnet-lite4-fp32 + mobileclip2-s0-onnx + mediapipe-0.10.29 + mlkit-bundled + rules-v4"
 
     private val appContext = context.applicationContext
     private val taxonomy by lazy { VisionTaxonomyLoader.load(appContext) }
     private val frameSampler by lazy { MediaFrameSampler(appContext) }
     private val mediaPipeProvider by lazy { MediaPipeVisionModelProvider(appContext) }
+    private val mobileClipProvider by lazy { MobileClipVisionModelProvider(appContext) }
     private val semanticEngine by lazy {
         MediaPipeSemanticInferenceEngine(
             context = appContext,
@@ -23,11 +24,13 @@ class OnDeviceAiClassificationEngine(
             taxonomy = taxonomy
         )
     }
+    private val mobileClipEngine by lazy { MobileClipSemanticInferenceEngine(appContext, mobileClipProvider) }
     private val mlKitEngine by lazy { MlKitAuxiliaryInferenceEngine(appContext) }
     private val pipeline by lazy {
         ClassificationPipeline(
             taxonomy = taxonomy,
             semanticEngine = semanticEngine,
+            clipEngine = mobileClipEngine,
             mlKitEngine = mlKitEngine,
             fallbackEngine = fallbackEngine
         )
@@ -44,7 +47,8 @@ class OnDeviceAiClassificationEngine(
             reducedMode = modelStatuses.none { status ->
                 status.loaded && status.modelId in setOf(
                     "main-image-classifier",
-                    "mediapipe-image-embedder"
+                    "mediapipe-image-embedder",
+                    "mobileclip-vision-encoder"
                 )
             },
             models = modelStatuses

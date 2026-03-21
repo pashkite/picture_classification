@@ -55,6 +55,7 @@ android {
 
     androidResources {
         noCompress += "tflite"
+        noCompress += "onnx"
     }
 }
 
@@ -80,6 +81,7 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 

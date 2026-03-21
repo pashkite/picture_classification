@@ -26,6 +26,10 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
   - 기본 경로: `MediaPipe ImageClassifier`
   - task 메타데이터 제약이 있으면 같은 `efficientnet-lite4.tflite`를 `TensorFlow Lite Interpreter`로 직접 실행
   - 외부 라벨맵: `efficientnet-imagenet-labels.txt`
+- 추가 의미 분류: `MobileCLIP2-S0 Vision Encoder`
+  - 자산: `mobileclip2_s0_vision.onnx`
+  - 런타임: `onnxruntime-android`
+  - 앱에는 vision encoder 만 싣고, 텍스트 프롬프트 임베딩은 `mobileclip_prompt_embeddings.json`으로 사전 계산해 둔다.
 - `ImageEmbedder` with `mobilenet_v3_small.tflite`
 - 보조 신호 추출: `ML Kit`
   - Face Detection
@@ -42,26 +46,32 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
    - `efficientnet-lite4.tflite`
    - 우선 `MediaPipe ImageClassifier`
    - 실패 시 같은 Lite4 모델을 `TensorFlow Lite Interpreter`로 직접 실행
-3. `MediaPipe ImageEmbedder`
+3. `MobileCLIP2-S0 Vision Encoder`
+   - `mobileclip2_s0_vision.onnx`
+   - 사전 계산된 프롬프트 임베딩과 유사도 비교
+4. `MediaPipe ImageEmbedder`
    - `mobilenet_v3_small.tflite`
    - 로컬 프로토타입 이미지와의 유사도 계산
-4. `ML Kit`
+5. `ML Kit`
    - Face Detection
    - Text Recognition
    - Image Labeling
-5. `ClassificationPipeline`
+6. `ClassificationPipeline`
    - 프레임별 점수 집계
    - taxonomy 매핑
-   - 얼굴/텍스트/UI/영수증/보조 라벨 점수 보정
+   - MobileCLIP / Lite4 / embedder / ML Kit 융합
    - 안전 폴백과 시리즈 후보 생성
 
-상세 화면 디버그 카드에서 현재 항목의 `main-image-classifier`, `mediapipe-image-embedder`, `mlkit-face`, `mlkit-text`, `mlkit-label` 실제 실행 여부와 프레임별 요약을 바로 볼 수 있다.
+상세 화면 디버그 카드에서 현재 항목의 `main-image-classifier`, `mobileclip-vision-encoder`, `mediapipe-image-embedder`, `mlkit-face`, `mlkit-text`, `mlkit-label` 실제 실행 여부와 프레임별 요약을 바로 볼 수 있다.
 
 ### 역할 분담
 
 - `EfficientNet-Lite4`
   - 사람, 풍경, 음식, 반려동물, 문서 계열의 일반 의미 분류에 사용
   - generic ImageNet 분류기이므로 애니 / 게임 / 밈 / 작품명은 낮은 확신도에서 보수적으로 해석
+- `MobileCLIP2-S0`
+  - 사전 계산된 라벨 프롬프트 임베딩과의 유사도로 상위 의미 분류를 보강
+  - 배경 일러스트 / 캐릭터 중심 / 스크린샷 / 문서 같은 의미 구분에서 Lite4의 generic 한계를 보완
 - `MediaPipe ImageEmbedder`
   - 로컬 프로토타입 이미지와의 유사도 비교에 사용
   - 그림 / 일러스트 / 애니 관련 / 게임 관련 / 밈 같은 스타일 계열 점수 보강에 사용
@@ -82,20 +92,23 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 - `ML Kit Image Labeling` 결과를 실제 융합에 넣되, 주 분류를 덮지 못하도록 낮은 가중치의 보조 prior 로만 반영했다.
 - 동영상 프레임 집계는 단순 평균이 아니라 단일 outlier 프레임을 덜 믿는 robust aggregation 으로 바꿨다.
 - fallback 규칙의 `사람 / 셀카 -> 캐릭터 중심` prior 를 `인물 중심`으로 교정했다.
+- `MobileCLIP2-S0` vision encoder 를 추가해 사전 계산한 프롬프트 임베딩과의 의미 유사도를 1차/2차 분류 보강에 사용한다.
 
 ## 런타임 선택 이유
 
-이번 작업은 학습이나 파인튜닝이 아니라, 기존 generic 분류기를 더 큰 generic 분류기로 교체하는 작업이다. `MobileCLIP` 또는 `SigLIP` 계열이 이상적이지만, 현재 저장소 구조와 Android 통합성을 해치지 않고 실제로 빌드/실행 가능한 경로를 우선했다.
+이번 작업은 학습이나 파인튜닝이 아니라, 기존 온디바이스 구조에 의미 기반 비전 모델을 추가하는 작업이다. `MobileCLIP` 또는 `SigLIP` 계열 중에서, 현재 저장소 구조와 Android 통합성을 해치지 않고 실제로 빌드/실행 가능한 경로를 우선했다.
 
 - 선택한 런타임: `com.google.mediapipe:tasks-vision:0.10.29`
 - 보조 런타임: `org.tensorflow:tensorflow-lite:2.14.0`
+- 추가 런타임: `com.microsoft.onnxruntime:onnxruntime-android:1.24.3`
 - 선택 이유:
   - Android 통합성이 높고 Compose/WorkManager 구조에 최소 침습으로 들어간다.
   - `ImageEmbedder`는 기존 MediaPipe 구조를 그대로 유지할 수 있다.
   - EfficientNet-Lite4 공식 체크포인트는 generic TFLite 모델이라 task 메타데이터가 약할 수 있어, 같은 Lite4 모델을 direct TFLite로도 실행할 수 있게 해 두는 편이 더 안전하다.
+  - MobileCLIP2-S0 는 vision encoder 가 약 44MB라 앱 자산으로 넣을 수 있는 범위고, 텍스트 encoder 는 앱에 싣지 않고 개발 시 한 번만 프롬프트 임베딩을 계산해 자산으로 고정할 수 있다.
   - 모델 파일이 없거나 초기화 실패 시 축소 모드로 안전하게 떨어지기 쉽다.
 
-즉, 이번 구현은 `EfficientNet-Lite4 generic classifier + MediaPipe embedder + ML Kit + 규칙 fallback` 조합이다. 학습이나 재학습은 하지 않았다.
+즉, 이번 구현은 `EfficientNet-Lite4 generic classifier + MobileCLIP2-S0 vision encoder + MediaPipe embedder + ML Kit + 규칙 fallback` 조합이다. 학습이나 재학습은 하지 않았다.
 
 ## 현재 분류 단계
 
@@ -149,6 +162,7 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 최종 분류는 단순 덮어쓰기가 아니라 점수 기반 융합으로 만든다.
 
 - Lite4 classifier 점수는 기본 의미 점수로 사용
+- MobileCLIP prompt similarity 는 추가 의미 점수로 사용하고, 이번 버전에서는 Lite4보다 조금 더 강한 보강 가중치를 준다.
 - MediaPipe embedder는 로컬 프로토타입 이미지와의 유사도로 스타일 점수를 보강
 - OCR 텍스트가 많으면 문서 / 영수증 / 스크린샷 가중치 상승
 - 얼굴 수만으로는 부족하고, 얼굴 면적 비율과 중앙도가 충분할 때만 사람 / 셀카 가중치를 강하게 올린다.
@@ -193,7 +207,7 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
       },
       "engineInfo": {
         "engineId": "hybrid-mlkit-mediapipe",
-        "engineVersion": "efficientnet-lite4-fp32 + mediapipe-0.10.29 + mlkit-bundled + rules-v3"
+        "engineVersion": "efficientnet-lite4-fp32 + mobileclip2-s0-onnx + mediapipe-0.10.29 + mlkit-bundled + rules-v4"
       },
       "debugInfo": {
         "confidence": 0.81,
@@ -222,6 +236,8 @@ Android 기기 내부의 사진과 동영상을 MediaStore로 읽어와, 3단계
 
 - `efficientnet-lite4.tflite` 자산 누락
 - `efficientnet-imagenet-labels.txt` 자산 파싱 실패
+- `mobileclip2_s0_vision.onnx` 자산 누락
+- `mobileclip_prompt_embeddings.json` 로드 실패
 - `mobilenet_v3_small.tflite` 자산 누락
 - Lite4 task/direct 초기화 실패
 
@@ -271,9 +287,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## 현재 한계
 
 - `EfficientNet-Lite4`는 앱 전용 분류기로 학습한 모델이 아니라 generic ImageNet 분류기다.
+- `MobileCLIP2-S0`를 추가했지만, 앱 안에는 vision encoder 와 사전 계산한 프롬프트 임베딩만 싣는다. 즉 자유로운 텍스트 쿼리나 사용자 임의 라벨 확장은 아직 즉시 반영되지 않는다.
 - 따라서 애니 / 게임 / 밈 / 특정 작품명 / 특정 캐릭터 정확도를 과장할 수 없고, 이번 버전은 낮은 확신도에서 `기타 / 검토 필요`로 보수적으로 폴백한다.
-- `MobileCLIP` / `SigLIP`처럼 텍스트와 완전히 정렬된 멀티모달 임베딩은 아직 붙이지 않았다.
-- 따라서 이번 버전의 작품명 추정은 이미지 자체보다 경로 / OCR / 로컬 키워드 사전 의존도가 더 높다.
+- 이번 버전은 `MobileCLIP2-S0` vision encoder 와 사전 계산 프롬프트 임베딩 조합까지이며, 런타임에서 자유 텍스트를 직접 인코딩하는 full text encoder 경로는 아직 없다.
+- 따라서 이번 버전의 작품명 추정은 여전히 이미지 자체보다 경로 / OCR / 로컬 키워드 사전 의존도가 더 높다.
 - MediaPipe 프로토타입 매칭은 로컬 생성 프로토타입 이미지 기반이라 정밀도가 제한적이다.
 - Lite4는 Lite0보다 무겁다. TensorFlow TPU 공식 README 기준 Pixel 4 CPU latency는 Lite0 FP32 12ms, Lite4 FP32 76ms 수준이라, 자동분류는 계속 백그라운드 worker 중심으로 돌리는 편이 안전하다.
 - Samsung Now Bar 노출은 앱이 요청할 수는 있어도 OEM 정책상 보장할 수 없다.

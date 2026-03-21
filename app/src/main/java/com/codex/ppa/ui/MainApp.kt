@@ -553,7 +553,7 @@ private fun MediaListScreen(
                     if (uiState.engineStatus.reducedMode) {
                         "추가 비전 모델 로딩에 실패해 일부 항목은 축소 모드로 처리될 수 있다."
                     } else {
-                        "EfficientNet-Lite4 기반 주 분류기와 ImageEmbedder가 의미 분류를 맡고, ML Kit는 얼굴/OCR 보조 신호를 더한다."
+                        "EfficientNet-Lite4와 MobileCLIP2-S0가 의미 분류를 맡고, ImageEmbedder와 ML Kit가 스타일·얼굴·OCR 보조 신호를 더한다."
                     },
                     "주 분류기는 generic ImageNet 계열이라 애니·게임·작품명은 낮은 확신도에서 기타/검토 필요로 보수적으로 폴백한다.",
                     "앱을 닫아도 WorkManager 기반 백그라운드 작업으로 계속 진행한다.",
@@ -943,7 +943,7 @@ private fun ClassificationEditScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
-                            text = "버튼을 누르면 EfficientNet-Lite4 일반 분류기, ImageEmbedder, ML Kit 보조 신호를 함께 사용해 1차~3차 초안을 채운다. generic 분류기라 확신이 낮으면 검토 필요로 폴백할 수 있고, 저장 전에 자유롭게 수정할 수 있다.",
+                            text = "버튼을 누르면 EfficientNet-Lite4, MobileCLIP2-S0, ImageEmbedder, ML Kit 보조 신호를 함께 사용해 1차~3차 초안을 채운다. generic 분류기와 CLIP prompt 매칭을 함께 쓰므로, 확신이 낮으면 검토 필요로 폴백할 수 있고 저장 전에 자유롭게 수정할 수 있다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -1406,7 +1406,7 @@ private fun EngineStatusCard(uiState: MainUiState) {
                 text = if (uiState.engineStatus.reducedMode) {
                     "Lite4 주 분류기 또는 임베더를 쓰지 못해 일부 항목은 ML Kit + 규칙 기반 축소 모드로 처리될 수 있다."
                 } else {
-                    "EfficientNet-Lite4 주 분류기와 ImageEmbedder가 의미 분류를 맡고, ML Kit는 얼굴/OCR/문서 보조 신호를 제공한다."
+                    "EfficientNet-Lite4와 MobileCLIP2-S0가 의미 분류를 맡고, ImageEmbedder와 ML Kit는 스타일·얼굴·OCR·문서 보조 신호를 제공한다."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

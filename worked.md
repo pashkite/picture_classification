@@ -2,86 +2,78 @@
 
 ## 1. 이번 작업의 목표
 
-- 현재 저장소의 온디바이스 분류 파이프라인을 실제 코드 기준으로 다시 분석한다.
-- `ML Kit + MediaPipe + fallback` 경로가 실제로 어떻게 연결되는지 확인한다.
-- `배경 일러스트 -> 사람 / 캐릭터 중심` 오분류 원인을 코드 수준에서 특정한다.
-- 학습 없이 taxonomy / threshold / fusion / frame aggregation / debug 구조를 개선한다.
+- 기존 `EfficientNet-Lite4 + ImageEmbedder + ML Kit` 구조에 추가 온디바이스 의미 모델을 붙인다.
+- `MobileCLIP / SigLIP` 계열을 검토한 뒤, 현재 저장소와 Android 통합성이 가장 현실적인 경로를 실제 코드로 넣는다.
+- 서버 호출 없이 기기 내부에서 동작하는 의미 기반 분류 보강을 구현한다.
 - 빌드, 테스트, 문서화, git 커밋과 푸시까지 마무리한다.
 
 ## 2. 실제로 구현한 기능
 
-- 분류 결과 debug info 구조 확장
-  - `fallbackUsed`
-  - `usedEngines`
-  - `frameSummaries`
-  - 모델별 `loaded / invoked / notes`
-- `MediaPipeSemanticInferenceEngine`
-  - 프레임별 classifier / embedder 결과 요약 생성
-  - 프레임 집계를 단순 평균에서 robust aggregation 으로 변경
-  - classifier / embedder 실제 로드 및 실행 여부를 결과에 포함
-- `MlKitAuxiliaryInferenceEngine`
-  - `face detection / text recognition / image labeling` 실제 실행 여부를 구조화해 남김
-  - 최대 얼굴 면적 비율, 최대 중앙도 계산 추가
-  - 프레임별 ML Kit 요약 생성
-- `ClassificationPipeline`
-  - ML Kit image labeling 결과를 낮은 가중치의 보조 prior 로 실제 반영
-  - 작은 얼굴 1개만으로 사람 / 셀카를 강하게 밀지 않도록 면적/중앙도 기반 gating 추가
-  - 배경 일러스트 성격이 강하면 `캐릭터 중심`보다 `배경 중심`을 우선하는 보수 규칙 추가
-  - 사용 엔진 목록, 프레임별 요약, 모델별 요약을 debug info 에 저장
-- `vision_taxonomy.json`
-  - `배경 중심` 2차 분류 추가
-  - `캐릭터 중심` taxonomy 를 일반 `person / portrait / face` 위주 매핑에서 축소
-- `BasicSuggestionClassifier`
-  - `사람 / 셀카 -> 캐릭터 중심` prior 를 `인물 중심`으로 교정
-- 상세 화면 디버그 카드
-  - 엔진별 로드/실행 여부 표시
-  - 프레임별 요약 표시
-  - fallback / reduced mode 표시 강화
-- 단위 테스트 추가
-  - 배경 일러스트
-  - 캐릭터 중심 일러스트
-  - outlier 프레임 집계
-  - 사람 fallback prior 교정
+- `onnxruntime-android:1.24.3` 추가
+- `MobileCLIP2-S0` vision encoder 자산 추가
+  - `app/src/main/assets/mobileclip2_s0_vision.onnx`
+- 프롬프트 임베딩 자산 추가
+  - `app/src/main/assets/mobileclip_prompt_embeddings.json`
+  - 앱에는 text encoder 를 싣지 않고, 사전 계산된 프롬프트 임베딩만 싣는다.
+- 개발용 생성 스크립트 추가
+  - `scripts/generate_mobileclip_prompt_embeddings.py`
+  - MobileCLIP text encoder 를 개발 시점에 한 번만 사용해 프롬프트 임베딩을 만든다.
+- `MobileClipVisionModelProvider` 추가
+  - ONNX Runtime 세션 로딩
+  - prompt catalog 로딩
+  - 모델 상태 노출
+- `MobileClipSemanticInferenceEngine` 추가
+  - 대표 프레임에서 image embedding 생성
+  - 사전 계산 프롬프트 임베딩과 유사도 비교
+  - 1차 / 2차 분류 점수 산출
+  - 프레임별 MobileCLIP 요약 생성
+- `ClassificationPipeline` 확장
+  - Lite4 / MobileCLIP / ImageEmbedder / ML Kit / fallback 동시 융합
+  - debug info 에 `mobileclip-vision-encoder` 결과 표시
+- `OnDeviceAiClassificationEngine` 엔진 이름 / 버전 갱신
+- UI 설명 문구와 README 갱신
+- MobileCLIP softmax 랭킹 단위 테스트 추가
 
 ## 3. 생성하거나 수정한 파일 목록
 
-- `app/src/main/assets/vision_taxonomy.json`
-- `app/src/main/java/com/codex/ppa/domain/ClassificationEngine.kt`
-- `app/src/main/java/com/codex/ppa/domain/Models.kt`
+- `app/build.gradle.kts`
+- `app/src/main/assets/mobileclip2_s0_vision.onnx`
+- `app/src/main/assets/mobileclip_prompt_embeddings.json`
+- `app/src/main/java/com/codex/ppa/domain/MobileClipSemanticEngine.kt`
 - `app/src/main/java/com/codex/ppa/domain/OnDeviceAiClassificationEngine.kt`
 - `app/src/main/java/com/codex/ppa/domain/VisionClassificationPipeline.kt`
 - `app/src/main/java/com/codex/ppa/ui/MainApp.kt`
-- `app/src/main/java/com/codex/ppa/ui/MainViewModel.kt`
-- `app/src/test/java/com/codex/ppa/domain/BasicSuggestionClassificationEngineTest.kt`
 - `app/src/test/java/com/codex/ppa/domain/ClassificationFusionHeuristicsTest.kt`
+- `app/src/test/java/com/codex/ppa/domain/MobileClipSemanticEngineTest.kt`
 - `README.md`
 - `worked.md`
+- `scripts/generate_mobileclip_prompt_embeddings.py`
 
 ## 4. 주요 설계 결정 사항
 
-- 새 학습이나 파인튜닝은 하지 않는다.
-  - 기존 `EfficientNet-Lite4 + ImageEmbedder + ML Kit + fallback` 구조를 유지한 채 정확도를 보정한다.
-- `배경 일러스트` 문제는 모델 하나를 바꾸기보다 taxonomy / fusion / 보조 신호 해석을 보수화하는 쪽으로 해결한다.
-- `캐릭터 중심`은 사람 전체가 아니라 `fictional character / cartoon / animation` 성격이 강할 때만 밀도록 조정했다.
-- 얼굴은 `개수`만으로 해석하지 않고 `면적 비율 + 중앙도`가 있어야 사람 / 셀카 가중치를 크게 준다.
-- 동영상 대표 프레임은 단순 평균보다 single outlier frame 을 덜 믿는 robust aggregation 을 사용한다.
-- fallback 엔진은 항상 약한 prior 로 호출되지만, `fallbackUsed=true`는 실제 축소 모드에 가까운 경우에만 세운다.
+- 앱에는 `MobileCLIP2-S0 vision encoder`만 넣고, text encoder 는 넣지 않는다.
+  - text encoder 는 약 243MB라 앱 탑재 비용이 너무 크다.
+  - 대신 개발 시점에 같은 MobileCLIP text encoder 로 라벨 프롬프트 임베딩을 미리 계산해 JSON 자산으로 고정했다.
+- 새 의미 모델은 기존 구조를 깨지 않도록 `InferenceEngine` 계층으로 추가했다.
+- MobileCLIP 점수는 absolute threshold 대신 softmax 랭킹으로 1차 / 2차 후보를 만든다.
+- Lite4, MobileCLIP, embedder, ML Kit 중 하나가 실패해도 전체 앱은 죽지 않고 나머지 경로로 계속 동작한다.
 
 ## 5. 빌드/검증에 사용한 명령어
 
 ```bash
+python3 -m venv /tmp/mobileclip-env
+source /tmp/mobileclip-env/bin/activate
+pip install numpy onnxruntime tokenizers pillow
+curl -L --fail -o /tmp/mobileclip2-s0/text_model.onnx https://huggingface.co/plhery/mobileclip2-onnx/resolve/main/onnx/s0/text_model.onnx
+curl -L --fail -o /tmp/mobileclip2-s0/tokenizer.json https://huggingface.co/plhery/mobileclip2-onnx/resolve/main/tokenizer.json
+curl -L --fail -o /tmp/mobileclip2-s0/vision_model.onnx https://huggingface.co/plhery/mobileclip2-onnx/resolve/main/onnx/s0/vision_model.onnx
+source /tmp/mobileclip-env/bin/activate && python scripts/generate_mobileclip_prompt_embeddings.py \
+  --text-model /tmp/mobileclip2-s0/text_model.onnx \
+  --tokenizer /tmp/mobileclip2-s0/tokenizer.json \
+  --output app/src/main/assets/mobileclip_prompt_embeddings.json
 ./gradlew testDebugUnitTest assembleDebug
 find app/build/test-results/testDebugUnitTest -name '*.xml' -print0 | xargs -0 rg -n "tests=|failures=|errors="
-git status --short
-git diff -- app/src/main/java/com/codex/ppa/domain/VisionClassificationPipeline.kt \
-  app/src/main/assets/vision_taxonomy.json \
-  app/src/main/java/com/codex/ppa/domain/ClassificationEngine.kt \
-  app/src/main/java/com/codex/ppa/domain/OnDeviceAiClassificationEngine.kt \
-  app/src/main/java/com/codex/ppa/ui/MainApp.kt \
-  app/src/main/java/com/codex/ppa/ui/MainViewModel.kt \
-  app/src/test/java/com/codex/ppa/domain/ClassificationFusionHeuristicsTest.kt \
-  app/src/test/java/com/codex/ppa/domain/BasicSuggestionClassificationEngineTest.kt \
-  app/src/main/java/com/codex/ppa/domain/Models.kt
+git log -1 --oneline
 ```
 
 ## 6. 빌드/검증 결과
@@ -93,17 +85,23 @@ git diff -- app/src/main/java/com/codex/ppa/domain/VisionClassificationPipeline.
   - `ClassificationPathPolicyTest`: 3건 통과
   - `BasicSuggestionClassificationEngineTest`: 5건 통과
   - `ClassificationFusionHeuristicsTest`: 7건 통과
-  - 총 17건 통과
+  - `MobileClipSemanticEngineTest`: 2건 통과
+  - 총 19건 통과
 - APK 생성 확인
   - `app/build/outputs/apk/debug/app-debug.apk`
+- git 반영
+  - 이 worked.md 갱신 내용은 이번 MobileCLIP 통합 커밋에 포함할 예정
 
 ## 7. 남은 한계점 및 TODO
 
-- `EfficientNet-Lite4`는 generic ImageNet 분류기라 애니 / 게임 / 작품명 / 캐릭터 세부 의미를 정확히 이해하는 전용 모델은 아니다.
-- `배경 중심` 규칙을 넣었지만, 복잡한 혼합 장면이나 key visual 류 이미지는 여전히 애매할 수 있다.
-- `ML Kit image labeling`은 보조 prior 로만 쓰기 때문에, 장르/작품 단정력은 제한적이다.
-- 현재는 UI 디버그 카드와 unit test 로 다중 엔진 실행 여부를 확인할 수 있지만, 실기기 자동화 UI 검증은 아직 없다.
-- 더 나은 의미 기반 분류가 필요하면 다음 우선순위는 `MobileCLIP / SigLIP` 계열 온디바이스 추가다.
+- 앱 안에는 MobileCLIP vision encoder 와 사전 계산 프롬프트 임베딩만 있다. 즉 사용자가 임의 라벨을 입력하면 그 자리에서 text embedding 을 새로 만들 수는 없다.
+- 작품명 / 시리즈명 후보는 여전히 OCR / 경로 / 로컬 키워드 사전 의존도가 높다.
+- ONNX Runtime native lib 가 들어가면서 APK 크기가 더 커졌다.
+- 실기기 성능과 메모리 사용량은 수동 확인이 더 필요하다.
+- 다음 개선 우선순위는
+  - prompt catalog 확장
+  - 시리즈 후보용 CLIP prompt 분기 추가
+  - 저사양 기기용 MobileCLIP 비활성화 정책
 
 ## 8. 현재 Codex 세션 정보
 

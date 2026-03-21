@@ -103,6 +103,7 @@ class ClassificationFusionHeuristicsTest {
             secondScore = 0.24f,
             classifierScore = 0.14f,
             prototypeScore = 0.22f,
+            clipScore = 0.12f,
             auxiliary = MlKitAuxiliaryResult(
                 faceCount = 0,
                 centeredFaceScore = 0f,
@@ -129,6 +130,7 @@ class ClassificationFusionHeuristicsTest {
             secondScore = 0.18f,
             classifierScore = 0.21f,
             prototypeScore = 0.10f,
+            clipScore = 0.18f,
             auxiliary = MlKitAuxiliaryResult(
                 faceCount = 0,
                 centeredFaceScore = 0f,

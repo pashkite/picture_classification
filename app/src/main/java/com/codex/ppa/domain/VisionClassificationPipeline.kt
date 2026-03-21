@@ -1082,13 +1082,17 @@ internal class FolderNameGenerator(
 internal class ClassificationPipeline(
     private val taxonomy: VisionTaxonomy,
     private val semanticEngine: MediaPipeSemanticInferenceEngine,
+    private val clipEngine: MobileClipSemanticInferenceEngine,
     private val mlKitEngine: MlKitAuxiliaryInferenceEngine,
     private val fallbackEngine: ClassificationEngine
 ) : ModelProvider {
     private val folderNameGenerator = FolderNameGenerator(taxonomy)
 
     override fun runtimeStatus(): List<ModelRuntimeStatus> {
-        return semanticEngine.runtimeStatus() + mlKitEngine.runtimeStatus() + fallbackEngine.runtimeStatus().models
+        return semanticEngine.runtimeStatus() +
+            clipEngine.runtimeStatus() +
+            mlKitEngine.runtimeStatus() +
+            fallbackEngine.runtimeStatus().models
     }
 
     suspend fun classify(
@@ -1097,6 +1101,7 @@ internal class ClassificationPipeline(
     ): ClassificationSuggestion? {
         val fallback = fallbackEngine.classify(request.mediaItem)
         val semantic = semanticEngine.infer(request)
+        val clipSemantic = clipEngine.infer(request)
         val auxiliary = mlKitEngine.infer(request)
         val searchableText = buildSearchableText(request.mediaItem, auxiliary)
         val reasoning = mutableListOf<String>()
@@ -1109,7 +1114,14 @@ internal class ClassificationPipeline(
         semantic?.secondaryScores.orEmpty().forEach { (label, score) ->
             secondaryScores.merge(label, score, Float::plus)
         }
+        clipSemantic?.primaryScores.orEmpty().forEach { (label, score) ->
+            primaryScores.merge(label, score * MobileClipPrimaryWeight, Float::plus)
+        }
+        clipSemantic?.secondaryScores.orEmpty().forEach { (label, score) ->
+            secondaryScores.merge(label, score * MobileClipSecondaryWeight, Float::plus)
+        }
         reasoning += semantic?.reasoning.orEmpty()
+        reasoning += clipSemantic?.reasoning.orEmpty()
         reasoning += auxiliary.reasoning
 
         taxonomy.primaryCategories.forEach { profile ->
@@ -1150,7 +1162,8 @@ internal class ClassificationPipeline(
             "raid",
             "battle",
             "게임"
-        ) || (semantic?.primaryScores?.get("게임 관련") ?: 0f) >= 0.35f
+        ) || (semantic?.primaryScores?.get("게임 관련") ?: 0f) >= 0.35f ||
+            (clipSemantic?.primaryScores?.get("게임 관련") ?: 0f) >= 0.22f
 
         if (auxiliary.faceCount > 0 && !hasStrongUiSignals && !hasStrongDocumentSignals) {
             when {
@@ -1243,9 +1256,13 @@ internal class ClassificationPipeline(
         val secondScore = sortedPrimary.getOrNull(1)?.score ?: 0f
         val topClassifierScore = semantic?.classifierTags?.firstOrNull()?.score ?: 0f
         val topPrototypeScore = semantic?.prototypeTags?.firstOrNull()?.score ?: 0f
+        val topClipScore = clipSemantic?.tags?.firstOrNull()?.score ?: 0f
         val semanticSupportScore = max(
-            topClassifierScore,
-            ((topPrototypeScore + 1f) / 2f).coerceIn(0f, 1f)
+            max(
+                topClassifierScore,
+                ((topPrototypeScore + 1f) / 2f).coerceIn(0f, 1f)
+            ),
+            topClipScore
         )
         val confidence = (
             topScore.coerceIn(0f, 1.15f) * TopScoreWeight +
@@ -1265,6 +1282,7 @@ internal class ClassificationPipeline(
             secondScore = secondScore,
             classifierScore = topClassifierScore,
             prototypeScore = topPrototypeScore,
+            clipScore = topClipScore,
             auxiliary = auxiliary,
             hasStrongUiSignals = hasStrongUiSignals,
             hasStrongDocumentSignals = hasStrongDocumentSignals
@@ -1321,21 +1339,25 @@ internal class ClassificationPipeline(
 
         val debugInfo = ClassificationDebugInfo(
             confidence = confidence,
-            reducedMode = semantic?.reducedMode == true,
-            fallbackUsed = semantic?.reducedMode == true,
+            reducedMode = semantic?.reducedMode != false && clipSemantic?.reducedMode != false,
+            fallbackUsed = semantic?.reducedMode != false && clipSemantic?.reducedMode != false,
             usedEngines = buildList {
                 if (semantic?.classifierInvoked == true) add("main-image-classifier")
                 if (semantic?.embedderInvoked == true) add("mediapipe-image-embedder")
+                if (clipSemantic?.invoked == true) add("mobileclip-vision-encoder")
                 if (auxiliary.faceInvoked) add("mlkit-face-detection")
                 if (auxiliary.textInvoked) add("mlkit-text-recognition")
                 if (auxiliary.labelInvoked) add("mlkit-image-labeling")
-                if (semantic?.reducedMode == true) add("rule-based-fallback")
+                if (semantic?.reducedMode != false && clipSemantic?.reducedMode != false) add("rule-based-fallback")
             },
             reasoning = reasoning,
             finalScores = sortedPrimary.take(6),
             seriesCandidates = seriesCandidates.take(5),
             frameSummaries = mergeFrameDebugSummaries(
-                semanticFrames = semantic?.frameSummaries.orEmpty(),
+                semanticFrames = mergeFrameDebugSummaries(
+                    semanticFrames = semantic?.frameSummaries.orEmpty(),
+                    mlKitFrames = clipSemantic?.frameSummaries.orEmpty()
+                ),
                 mlKitFrames = auxiliary.frameSummaries
             ),
             modelOutputs = buildList {
@@ -1369,6 +1391,22 @@ internal class ClassificationPipeline(
                                 "로컬 프로토타입과의 유사도를 이용해 스타일/장르 점수를 보강했다."
                             },
                             tags = it.prototypeTags.take(8)
+                        )
+                    )
+                }
+                clipSemantic?.let {
+                    add(
+                        ModelDebugInfo(
+                            modelId = "mobileclip-vision-encoder",
+                            displayName = "MobileCLIP2-S0 Vision Encoder",
+                            loaded = it.loaded,
+                            invoked = it.invoked,
+                            summary = if (it.reducedMode) {
+                                "MobileCLIP vision encoder 또는 prompt catalog 를 못 불러와 의미 보강을 건너뛰었다."
+                            } else {
+                                "사전 계산한 프롬프트 임베딩과의 유사도로 의미 기반 후보를 추가했다."
+                            },
+                            tags = it.tags.take(8)
                         )
                     )
                 }
@@ -1642,6 +1680,7 @@ internal fun shouldUseReviewFallback(
     secondScore: Float,
     classifierScore: Float,
     prototypeScore: Float,
+    clipScore: Float,
     auxiliary: MlKitAuxiliaryResult,
     hasStrongUiSignals: Boolean,
     hasStrongDocumentSignals: Boolean
@@ -1660,7 +1699,8 @@ internal fun shouldUseReviewFallback(
     val lowTopScore = topScore < ConservativeTopScoreThreshold
     val lowMargin = (topScore - secondScore) < ConservativeMarginThreshold
     val weakSemanticSupport = classifierScore < ConservativeClassifierThreshold &&
-        prototypeScore < ConservativePrototypeThreshold
+        prototypeScore < ConservativePrototypeThreshold &&
+        clipScore < ConservativeClipThreshold
     val weakMlKitSupport = auxiliary.faceCount == 0 &&
         auxiliary.textLength < 18 &&
         auxiliary.uiKeywordHits.isEmpty() &&
@@ -2253,6 +2293,9 @@ private const val ConservativeMarginThreshold = 0.12f
 private const val VeryLowTopScoreThreshold = 0.24f
 private const val ConservativeClassifierThreshold = 0.25f
 private const val ConservativePrototypeThreshold = 0.52f
+private const val ConservativeClipThreshold = 0.22f
+private const val MobileClipPrimaryWeight = 1.1f
+private const val MobileClipSecondaryWeight = 0.95f
 private const val AuxiliaryLabelMinimumScore = 0.18f
 private const val AuxiliaryPrimaryWeight = 0.14f
 private const val AuxiliarySecondaryWeight = 0.11f
